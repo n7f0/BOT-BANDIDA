@@ -1,4 +1,4 @@
-# bot.py - NEXZY STORE - FINAL (EMOJIS ANIMADOS + SELETOR FUNCIONAL)
+# bot.py - NEXZY STORE - Versão limpa e reutilizável
 import discord
 from discord.ext import commands
 from discord import Embed, Color, PartialEmoji
@@ -19,31 +19,54 @@ import re
 from datetime import datetime, timedelta
 from aiohttp import web
 
-# ================= CONFIG =================
-CARGO_DONO      = int(os.getenv("CARGO_DONO", "0"))
-CANAL_LOJA      = int(os.getenv("CANAL_LOJA", "0"))
-CANAL_VENDAS    = int(os.getenv("CANAL_VENDAS", "0"))
-CANAL_LOG_VENDAS = int(os.getenv("CANAL_LOG_VENDAS", "1492726744514428980"))
-CANAL_LOG_ADMIN  = int(os.getenv("CANAL_LOG_ADMIN", "1502680283470758041"))
-GUILD_ID         = int(os.getenv("GUILD_ID", "0"))
+# ================= CONFIGURAÇÃO (TUDO VIA ENV) =================
 DISCORD_TOKEN   = os.getenv("LOJA_DISCORD_TOKEN")
 MP_TOKEN        = os.getenv("MERCADO_PAGO_TOKEN")
 DATABASE_URL    = os.getenv("DATABASE_URL")
+GUILD_ID        = os.getenv("GUILD_ID")
+CARGO_DONO      = os.getenv("CARGO_DONO")
+CANAL_LOJA      = os.getenv("CANAL_LOJA")
+CANAL_VENDAS    = os.getenv("CANAL_VENDAS")
+CANAL_LOG_VENDAS = os.getenv("CANAL_LOG_VENDAS")
+CANAL_LOG_ADMIN  = os.getenv("CANAL_LOG_ADMIN")
 
-# CORES TEMA PRETO
+# Validação obrigatória
+missing = []
+for name, val in [
+    ("LOJA_DISCORD_TOKEN", DISCORD_TOKEN),
+    ("MERCADO_PAGO_TOKEN", MP_TOKEN),
+    ("DATABASE_URL", DATABASE_URL),
+    ("GUILD_ID", GUILD_ID),
+    ("CARGO_DONO", CARGO_DONO),
+    ("CANAL_LOJA", CANAL_LOJA),
+    ("CANAL_VENDAS", CANAL_VENDAS)
+]:
+    if not val:
+        missing.append(name)
+
+if missing:
+    print("❌ Variáveis obrigatórias não configuradas:", ", ".join(missing))
+    exit(1)
+
+# Converte para int onde necessário
+GUILD_ID        = int(GUILD_ID)
+CARGO_DONO      = int(CARGO_DONO)
+CANAL_LOJA      = int(CANAL_LOJA)
+CANAL_VENDAS    = int(CANAL_VENDAS)
+if CANAL_LOG_VENDAS:
+    CANAL_LOG_VENDAS = int(CANAL_LOG_VENDAS)
+if CANAL_LOG_ADMIN:
+    CANAL_LOG_ADMIN = int(CANAL_LOG_ADMIN)
+
+if "railwaypostgresql://" in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace("railwaypostgresql://", "postgresql://")
+
+# Cores tema escuro
 COR_PRINCIPAL   = 0x1a1a1a
 COR_SUCESSO     = 0x2d2d2d
 COR_ERRO        = 0x8b0000
 COR_PENDENTE    = 0x3d3d3d
 COR_DESTAQUE    = 0x4a4a4a
-
-for var, nome in [(DISCORD_TOKEN,"LOJA_DISCORD_TOKEN"),(MP_TOKEN,"MERCADO_PAGO_TOKEN"),(DATABASE_URL,"DATABASE_URL")]:
-    if not var:
-        print(f"❌ {nome} não configurado!")
-        exit(1)
-
-if "railwaypostgresql://" in DATABASE_URL:
-    DATABASE_URL = DATABASE_URL.replace("railwaypostgresql://", "postgresql://")
 
 sdk     = mercadopago.SDK(MP_TOKEN)
 intents = discord.Intents.all()
@@ -73,8 +96,7 @@ def instalar_7zip():
             capture_output=True, text=True, timeout=120
         )
         return result.returncode == 0
-    except Exception as e:
-        print(f"Erro ao instalar 7-Zip: {e}")
+    except:
         return False
 
 def criar_embed(titulo="", descricao="", cor=COR_PRINCIPAL):
@@ -87,25 +109,17 @@ async def get_guild():
     return bot.get_guild(GUILD_ID)
 
 def parse_emoji(emoji_str: str):
-    """
-    Converte uma string de emoji (Unicode ou <a:nome:id>) para um objeto compatível com SelectOption.
-    Retorna uma string Unicode ou um PartialEmoji.
-    """
     if not emoji_str:
         return None
-    
-    # Se for um emoji customizado animado ou normal: <a:...:id> ou <:...:id>
     match = re.match(r'<(a?):(\w+):(\d+)>', emoji_str)
     if match:
         animated = match.group(1) == 'a'
         name = match.group(2)
         emoji_id = int(match.group(3))
         return PartialEmoji(animated=animated, name=name, id=emoji_id)
-    
-    # Se for um emoji Unicode simples
     return emoji_str
 
-# ================= BANCO =================
+# ================= BANCO DE DADOS =================
 async def init_db():
     global db
     try:
@@ -122,16 +136,6 @@ async def init_db():
                     arquivo_data BYTEA DEFAULT NULL
                 )
             """)
-            for col, tipo in [
-                ("descricao","TEXT DEFAULT ''"),
-                ("arquivo_nome","TEXT DEFAULT NULL"),
-                ("arquivo_data","BYTEA DEFAULT NULL")
-            ]:
-                try:
-                    await conn.execute(f"ALTER TABLE produtos ADD COLUMN IF NOT EXISTS {col} {tipo}")
-                except Exception:
-                    pass
-
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS pedidos (
                     id            TEXT PRIMARY KEY,
@@ -161,10 +165,6 @@ async def init_db():
                     criado_em    TIMESTAMP DEFAULT NOW()
                 )
             """)
-            if not await conn.fetch("SELECT id FROM produtos LIMIT 1"):
-                await conn.execute("INSERT INTO produtos (id,nome,preco,emoji,descricao) VALUES ('prod1','VIP Bronze',19.90,'🥉','Acesso VIP Bronze')")
-                await conn.execute("INSERT INTO produtos (id,nome,preco,emoji,descricao) VALUES ('prod2','VIP Prata',39.90,'🥈','Acesso VIP Prata')")
-                await conn.execute("INSERT INTO produtos (id,nome,preco,emoji,descricao) VALUES ('prod3','VIP Ouro',69.90,'🥇','Acesso VIP Ouro')")
         print("✅ Banco conectado!")
         return True
     except Exception as e:
@@ -228,8 +228,10 @@ async def limpar_banco_completo():
         await conn.execute("DELETE FROM produtos")
         await conn.execute("UPDATE vendas SET total=0, quantidade=0 WHERE id=1")
 
-# ================= LOGS =================
+# ================= LOGS (OPCIONAIS) =================
 async def log_venda(pedido_id, user, produto, valor, senha_arquivo=None):
+    if not CANAL_LOG_VENDAS:
+        return
     canal = bot.get_channel(CANAL_LOG_VENDAS)
     if not canal: return
     embed = criar_embed(titulo="🖤 VENDA FINALIZADA", descricao="Nova compra aprovada com sucesso!", cor=COR_SUCESSO)
@@ -238,10 +240,11 @@ async def log_venda(pedido_id, user, produto, valor, senha_arquivo=None):
     embed.add_field(name="📦 Produto", value=produto, inline=True)
     embed.add_field(name="💰 Valor", value=formatar_preco(valor), inline=True)
     embed.add_field(name="🔐 Senha", value=f"`{senha_arquivo}`" if senha_arquivo else "Sem arquivo", inline=False)
-    embed.add_field(name="⏰ Canal", value="Expira em 5 minutos", inline=True)
     await canal.send(embed=embed)
 
 async def log_admin(acao, admin, detalhes, cor=COR_DESTAQUE):
+    if not CANAL_LOG_ADMIN:
+        return
     canal = bot.get_channel(CANAL_LOG_ADMIN)
     if not canal: return
     embed = criar_embed(titulo=f"⚙️ ADMIN • {acao}", descricao=detalhes, cor=cor)
@@ -256,12 +259,10 @@ def _criar_7z_sync(dados: bytes, nome_original: str, senha: str) -> bytes:
         with open(caminho_original, "wb") as f:
             f.write(dados)
         caminho_saida = os.path.join(tmp, "entrega.7z")
-        resultado = subprocess.run(
+        subprocess.run(
             ["7z", "a", f"-p{senha}", "-mhe=on", "-mx=0", caminho_saida, caminho_original],
-            capture_output=True, text=True, timeout=120
+            capture_output=True, text=True, timeout=120, check=True
         )
-        if resultado.returncode != 0:
-            raise RuntimeError(f"7zip error: {resultado.stderr.strip()}")
         with open(caminho_saida, "rb") as f:
             return f.read()
     finally:
@@ -271,9 +272,8 @@ async def criar_7z_criptografado(dados: bytes, nome_original: str, senha: str) -
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, _criar_7z_sync, dados, nome_original, senha)
 
-# ================= ENTREGA VIA CANAL TEMPORÁRIO (5 MIN + KEY ÚNICA) =================
+# ================= ENTREGA VIA CANAL TEMPORÁRIO =================
 async def entregar_produto(user, produto: dict, pedido_id: str, guild, dados_arquivo_override: bytes = None, nome_arquivo_override: str = None):
-    
     senha_arquivo = None
     tem_arquivo = False
     dados_raw = None
@@ -286,19 +286,11 @@ async def entregar_produto(user, produto: dict, pedido_id: str, guild, dados_arq
         nome_original = nome_arquivo_override or "arquivo_nexzy"
     else:
         prod_completo = await get_produto_completo(produto["id"])
-        if prod_completo is not None:
-            arquivo_data = prod_completo["arquivo_data"]
-            arquivo_nome = prod_completo["arquivo_nome"]
-            if arquivo_data is not None:
-                tem_arquivo = True
-                senha_arquivo = gerar_senha_arquivo()
-                if isinstance(arquivo_data, memoryview):
-                    dados_raw = arquivo_data.tobytes()
-                elif isinstance(arquivo_data, (bytes, bytearray)):
-                    dados_raw = bytes(arquivo_data)
-                else:
-                    dados_raw = bytes(arquivo_data)
-                nome_original = arquivo_nome or f"produto_{produto['id']}"
+        if prod_completo and prod_completo["arquivo_data"] is not None:
+            tem_arquivo = True
+            senha_arquivo = gerar_senha_arquivo()
+            dados_raw = bytes(prod_completo["arquivo_data"])
+            nome_original = prod_completo["arquivo_nome"] or f"produto_{produto['id']}"
 
     overwrites = {
         guild.default_role: discord.PermissionOverwrite(read_messages=False),
@@ -310,27 +302,11 @@ async def entregar_produto(user, produto: dict, pedido_id: str, guild, dados_arq
         overwrites[cargo_dono] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
 
     nome_canal = f"🛒-compra-{user.name.lower().replace(' ', '-')[:20]}"
-    try:
-        canal_temp = await guild.create_text_channel(
-            name=nome_canal,
-            overwrites=overwrites,
-            reason=f"Entrega para {user.name} • pedido {pedido_id}"
-        )
-    except discord.Forbidden:
-        try:
-            embed = criar_embed(titulo="⚠️ Erro na entrega", descricao="Não foi possível criar o canal.", cor=COR_ERRO)
-            await user.send(embed=embed)
-        except:
-            pass
-        return
+    canal_temp = await guild.create_text_channel(name=nome_canal, overwrites=overwrites, reason=f"Entrega para {user.name}")
 
     embed = discord.Embed(
         title="🖤  NEXZY STORE — COMPRA APROVADA",
-        description=(
-            f"> Olá, **{user.display_name}**! Seu pagamento foi **confirmado**.\n"
-            f"> ⚠️ **Este canal será excluído em 5 minutos!**\n"
-            f"> 🔐 **A key é de uso único** — após extrair, o canal será destruído."
-        ),
+        description=f"> Olá, **{user.display_name}**! Seu pagamento foi **confirmado**.\n> ⚠️ **Este canal será excluído em 5 minutos!**\n> 🔐 **A key é de uso único** — após extrair, o canal será destruído.",
         color=0x2b2b2b
     )
     embed.set_thumbnail(url=user.display_avatar.url if user.display_avatar else None)
@@ -342,56 +318,25 @@ async def entregar_produto(user, produto: dict, pedido_id: str, guild, dados_arq
 
     if tem_arquivo:
         embed.add_field(name="**🔐  Senha do Arquivo `.7z`**", value=f"```\n{senha_arquivo}\n```", inline=False)
-        embed.add_field(
-            name="**📂  Como extrair**",
-            value=(
-                "**1.** Baixe o arquivo `.7z` abaixo **AGORA**\n"
-                "**2.** Instale o **[7-Zip](https://7-zip.org)** (gratuito)\n"
-                "**3.** Clique com botão direito → *7-Zip → Extrair aqui*\n"
-                "**4.** Insira a senha acima\n\n"
-                "⚠️ **KEY DE USO ÚNICO** — Após 5 minutos o canal será **DELETADO**\n"
-                "⚠️ **Este arquivo é exclusivo para esta compra.**"
-            ),
-            inline=False
-        )
+        embed.add_field(name="**📂  Como extrair**", value="**1.** Baixe o arquivo `.7z` abaixo **AGORA**\n**2.** Instale o **[7-Zip](https://7-zip.org)**\n**3.** Extraia com a senha acima\n\n⚠️ **KEY DE USO ÚNICO** — Canal será deletado em 5 minutos", inline=False)
         embed.set_footer(text="⚫ NEXZY STORE  •  5 minutos para baixar!")
         embed.timestamp = datetime.utcnow()
 
-        try:
-            if not verificar_7zip():
-                print("⏳ 7-Zip não encontrado. Tentando instalar...")
-                if instalar_7zip():
-                    print("✅ 7-Zip instalado com sucesso!")
-                else:
-                    raise RuntimeError("7-Zip não encontrado e não foi possível instalar automaticamente.")
-            
+        if not verificar_7zip():
+            await canal_temp.send("⚠️ 7-Zip não está instalado no servidor. Peça ao administrador para executar `!instalar7z`.")
+        else:
             dados_cifrados = await criar_7z_criptografado(dados_raw, nome_original, senha_arquivo)
             nome_saida = f"nexzy_{produto['id']}_{pedido_id[:8]}.7z"
             arquivo_discord = discord.File(fp=io.BytesIO(dados_cifrados), filename=nome_saida)
             await canal_temp.send(embed=embed, file=arquivo_discord)
-            print(f"✅ Arquivo entregue: {nome_saida}")
-        except Exception as e:
-            print(f"❌ Erro criptografia: {e}")
-            embed.add_field(name="⚠️  Problema na entrega", value="Houve um erro. O suporte foi notificado.", inline=False)
-            await canal_temp.send(embed=embed)
-            canal_admin = bot.get_channel(CANAL_LOG_ADMIN)
-            if canal_admin:
-                await canal_admin.send(embed=criar_embed(
-                    titulo="❌ ERRO NA ENTREGA",
-                    descricao=f"Pedido `{pedido_id}`\nUsuário {user.mention}\nProduto {produto['nome']}\nErro: `{e}`",
-                    cor=COR_ERRO
-                ))
     else:
         embed.add_field(name="**✅  Próximos passos**", value="Produto ativado. Abra um ticket se precisar.", inline=False)
-        embed.set_footer(text="⚫ NEXZY STORE  •  5 minutos para baixar!")
-        embed.timestamp = datetime.utcnow()
         await canal_temp.send(embed=embed)
 
-    # Exclusão após 5 minutos (300 segundos)
     async def remover_canal():
         await asyncio.sleep(300)
         try:
-            await canal_temp.delete(reason="Canal de entrega expirado (5 min) — Key de uso único")
+            await canal_temp.delete(reason="Canal de entrega expirado (5 min)")
         except:
             pass
     asyncio.create_task(remover_canal())
@@ -402,7 +347,7 @@ async def entregar_produto(user, produto: dict, pedido_id: str, guild, dados_arq
     else:
         await log_admin("Teste de Entrega", user, f"Pedido `{pedido_id}` | Produto: {produto['nome']}")
 
-# ================= MODALS =================
+# ================= MODAIS E SELECTS =================
 class ProdutoModal(discord.ui.Modal, title="✨ Adicionar Produto"):
     nome_input      = discord.ui.TextInput(label="📦 Nome", placeholder="Ex: VIP Premium", required=True)
     preco_input     = discord.ui.TextInput(label="💰 Preço", placeholder="49.90", required=True)
@@ -435,20 +380,18 @@ class EditarProdutoModal(discord.ui.Modal, title="✏️ Editar Produto"):
     def __init__(self, produto):
         super().__init__()
         self.produto_id = produto["id"]
-        self.nome_input = discord.ui.TextInput(label="📦 Nome", default=produto["nome"], required=True)
-        self.preco_input = discord.ui.TextInput(label="💰 Preço", default=str(produto["preco"]), required=True)
-        self.emoji_input = discord.ui.TextInput(label="😀 Emoji", default=produto["emoji"], required=False)
-        self.descricao_input = discord.ui.TextInput(label="📝 Descrição", default=produto.get("descricao",""), required=False)
-        for item in [self.nome_input, self.preco_input, self.emoji_input, self.descricao_input]:
-            self.add_item(item)
+        self.add_item(discord.ui.TextInput(label="📦 Nome", default=produto["nome"], required=True))
+        self.add_item(discord.ui.TextInput(label="💰 Preço", default=str(produto["preco"]), required=True))
+        self.add_item(discord.ui.TextInput(label="😀 Emoji", default=produto["emoji"], required=False))
+        self.add_item(discord.ui.TextInput(label="📝 Descrição", default=produto.get("descricao",""), required=False))
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         try:
-            nome = self.nome_input.value
-            preco = float(self.preco_input.value.replace(",", "."))
-            emoji = self.emoji_input.value or "🛒"
-            descricao = self.descricao_input.value or ""
+            nome = self.children[0].value
+            preco = float(self.children[1].value.replace(",", "."))
+            emoji = self.children[2].value or "🛒"
+            descricao = self.children[3].value or ""
             await edit_produto(self.produto_id, nome, preco, emoji, descricao)
             await interaction.followup.send("✅ Produto editado!", ephemeral=True)
             await atualizar_loja()
@@ -456,7 +399,6 @@ class EditarProdutoModal(discord.ui.Modal, title="✏️ Editar Produto"):
         except Exception as e:
             await interaction.followup.send(f"❌ Erro: {e}", ephemeral=True)
 
-# ================= SELECTS (COM SUPORTE A EMOJIS ANIMADOS) =================
 class RemoverSelect(discord.ui.Select):
     def __init__(self, produtos):
         options = []
@@ -467,8 +409,7 @@ class RemoverSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         produtos = await get_produtos()
-        produto = produtos.get(self.values[0])
-        nome = produto["nome"] if produto else self.values[0]
+        nome = produtos.get(self.values[0], {}).get("nome", self.values[0])
         await remove_produto(self.values[0])
         await interaction.followup.send(f"✅ **{nome}** removido!", ephemeral=True)
         await atualizar_loja()
@@ -484,7 +425,8 @@ class EditarSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         produtos = await get_produtos()
         produto = produtos.get(self.values[0])
-        if not produto: return await interaction.response.send_message("❌ Produto não encontrado.", ephemeral=True)
+        if not produto:
+            return await interaction.response.send_message("❌ Produto não encontrado.", ephemeral=True)
         await interaction.response.send_modal(EditarProdutoModal(produto))
 
 class ProdutoSelect(discord.ui.Select):
@@ -495,15 +437,12 @@ class ProdutoSelect(discord.ui.Select):
             options.append(discord.SelectOption(label=f"{p['nome']} — {formatar_preco(p['preco'])}", value=pid, emoji=emoji))
         super().__init__(placeholder="🛒 Escolha um produto", options=options[:25])
     async def callback(self, interaction: discord.Interaction):
-        # Confirma visualmente a seleção antes de gerar o Pix
         await interaction.response.defer(ephemeral=True)
         produto_id = self.values[0]
         produtos = await get_produtos()
         produto = produtos.get(produto_id)
         if not produto:
             return await interaction.followup.send("❌ Produto não encontrado.", ephemeral=True)
-        
-        # Envia uma mensagem de confirmação e depois inicia o pagamento
         await interaction.followup.send(f"✅ **{produto['emoji']} {produto['nome']}** selecionado! Gerando Pix...", ephemeral=True)
         await iniciar_pagamento(interaction, produto_id)
 
@@ -512,12 +451,6 @@ class ConfirmacaoLimpezaView(discord.ui.View):
     def __init__(self, interaction_original):
         super().__init__(timeout=60)
         self.interaction_original = interaction_original
-
-    async def on_timeout(self):
-        try:
-            await self.interaction_original.edit_original_response(content="⏰ Tempo expirado.", embed=None, view=None)
-        except:
-            pass
 
     @discord.ui.button(label="✅ CONFIRMAR LIMPEZA", style=discord.ButtonStyle.danger, emoji="⚠️")
     async def confirmar(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -631,7 +564,12 @@ class AdminView(discord.ui.View):
     @discord.ui.button(label="📊 Estatísticas", style=discord.ButtonStyle.secondary)
     async def stats(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
-        await interaction.followup.send(embed=await montar_embed_vendas(), ephemeral=True)
+        total, qtd = await get_vendas()
+        embed = criar_embed(titulo="📊 ESTATÍSTICAS — NEXZY STORE", cor=COR_DESTAQUE)
+        embed.add_field(name="📦 Vendas", value=f"**{qtd}** pedidos", inline=True)
+        embed.add_field(name="💰 Faturamento", value=f"**{formatar_preco(total)}**", inline=True)
+        embed.add_field(name="📈 Ticket Médio", value=formatar_preco(total/qtd) if qtd else "R$ 0,00", inline=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 # ================= PAGAMENTO =================
 async def iniciar_pagamento(interaction: discord.Interaction, produto_id: str):
@@ -668,12 +606,10 @@ async def iniciar_pagamento(interaction: discord.Interaction, produto_id: str):
         view = discord.ui.View()
         view.add_item(discord.ui.Button(label="✅ JÁ PAGUEI", style=discord.ButtonStyle.success, custom_id=f"check_{pay_id}"))
         view.add_item(discord.ui.Button(label="❌ CANCELAR", style=discord.ButtonStyle.danger, custom_id=f"cancel_{pay_id}"))
-        # Envia o Pix como uma nova mensagem ephemeral
         await interaction.followup.send(embed=embed, view=view, ephemeral=True)
         guild = interaction.guild or await get_guild()
         asyncio.create_task(verificar_pagamento(pay_id, pedido_id, interaction.user, produto, guild))
     except Exception as e:
-        print(f"Erro PIX: {e}")
         await interaction.followup.send(f"❌ Erro: {str(e)[:200]}", ephemeral=True)
 
 async def verificar_pagamento(payment_id, pedido_id, user, produto, guild):
@@ -687,11 +623,11 @@ async def verificar_pagamento(payment_id, pedido_id, user, produto, guild):
                 await entregar_produto(user, dict(produto), pedido_id, guild)
                 await atualizar_vendas()
                 return
-        except Exception as e:
-            print(f"Verificação: {e}")
+        except:
+            pass
     await update_pedido(pedido_id, "expirado")
 
-# ================= EMBEDS LOJA / VENDAS =================
+# ================= ATUALIZAÇÃO DA VITRINE =================
 async def montar_embed_loja():
     produtos = await get_produtos()
     embed = criar_embed(titulo="**🖤  N E X Z Y  S T O R E**",
@@ -707,40 +643,34 @@ async def montar_embed_loja():
     embed.timestamp = datetime.utcnow()
     return embed
 
-async def montar_embed_vendas():
-    total, qtd = await get_vendas()
-    embed = criar_embed(titulo="📊 ESTATÍSTICAS — NEXZY STORE", cor=COR_DESTAQUE)
-    embed.add_field(name="📦 Vendas", value=f"**{qtd}** pedidos", inline=True)
-    embed.add_field(name="💰 Faturamento", value=f"**{formatar_preco(total)}**", inline=True)
-    embed.add_field(name="📈 Ticket Médio", value=formatar_preco(total/qtd) if qtd else "R$ 0,00", inline=True)
-    return embed
-
-# ================= ATUALIZAÇÕES =================
 async def atualizar_loja():
     canal = bot.get_channel(CANAL_LOJA)
     if not canal:
+        print("⚠️ Canal da loja não encontrado. Verifique CANAL_LOJA.")
         return
     async for msg in canal.history(limit=10):
         if msg.author == bot.user:
-            try:
-                await msg.delete()
-            except:
-                pass
+            try: await msg.delete()
+            except: pass
     await canal.send(embed=await montar_embed_loja(), view=LojaButtons())
 
 async def atualizar_vendas():
     canal = bot.get_channel(CANAL_VENDAS)
     if not canal:
+        print("⚠️ Canal de vendas não encontrado. Verifique CANAL_VENDAS.")
         return
     async for msg in canal.history(limit=10):
         if msg.author == bot.user:
-            try:
-                await msg.delete()
-            except:
-                pass
-    await canal.send(embed=await montar_embed_vendas())
+            try: await msg.delete()
+            except: pass
+    total, qtd = await get_vendas()
+    embed = criar_embed(titulo="📊 ESTATÍSTICAS — NEXZY STORE", cor=COR_DESTAQUE)
+    embed.add_field(name="📦 Vendas", value=f"**{qtd}** pedidos", inline=True)
+    embed.add_field(name="💰 Faturamento", value=f"**{formatar_preco(total)}**", inline=True)
+    embed.add_field(name="📈 Ticket Médio", value=formatar_preco(total/qtd) if qtd else "R$ 0,00", inline=True)
+    await canal.send(embed=embed)
 
-# ================= WEBHOOK MP =================
+# ================= WEBHOOK MERCADO PAGO =================
 async def webhook_mp(request):
     try:
         data = await request.json()
@@ -772,28 +702,30 @@ async def start_server():
     app.router.add_get("/health", lambda r: web.Response(text="OK — NEXZY STORE"))
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT", "8080")))
+    port = int(os.getenv("PORT", "8080"))
+    site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
-    print("✅ Servidor HTTP ativo")
+    print(f"✅ Servidor HTTP ativo na porta {port}")
 
-# ================= COMANDOS =================
+# ================= COMANDOS EXTRA =================
 @bot.command(name="loja")
 async def cmd_loja(ctx):
     await ctx.send(embed=await montar_embed_loja(), view=LojaButtons())
-    try:
-        await ctx.message.delete()
-    except:
-        pass
+    try: await ctx.message.delete()
+    except: pass
 
 @bot.command(name="vendas")
 async def cmd_vendas(ctx):
     if not any(r.id == CARGO_DONO for r in ctx.author.roles):
         return
-    await ctx.send(embed=await montar_embed_vendas())
-    try:
-        await ctx.message.delete()
-    except:
-        pass
+    total, qtd = await get_vendas()
+    embed = criar_embed(titulo="📊 ESTATÍSTICAS — NEXZY STORE", cor=COR_DESTAQUE)
+    embed.add_field(name="📦 Vendas", value=f"**{qtd}** pedidos", inline=True)
+    embed.add_field(name="💰 Faturamento", value=f"**{formatar_preco(total)}**", inline=True)
+    embed.add_field(name="📈 Ticket Médio", value=formatar_preco(total/qtd) if qtd else "R$ 0,00", inline=True)
+    await ctx.send(embed=embed)
+    try: await ctx.message.delete()
+    except: pass
 
 @bot.command(name="upload")
 async def cmd_upload(ctx, produto_id: str = None):
@@ -834,8 +766,7 @@ async def cmd_remover_arquivo(ctx, produto_id: str = None):
 async def cmd_check7z(ctx):
     if not any(r.id == CARGO_DONO for r in ctx.author.roles):
         return
-    ok = verificar_7zip()
-    if ok:
+    if verificar_7zip():
         result = subprocess.run(["7z", "i"], capture_output=True, text=True, timeout=5)
         await ctx.reply(f"✅ **7-Zip instalado!**\n`{result.stdout.strip()}`")
     else:
@@ -843,54 +774,39 @@ async def cmd_check7z(ctx):
 
 @bot.command(name="instalar7z")
 async def cmd_instalar7z(ctx):
-    """Instala o 7-Zip no servidor Railway"""
     if not any(r.id == CARGO_DONO for r in ctx.author.roles):
         return await ctx.reply("❌ Sem permissão.", delete_after=5)
-    
-    msg = await ctx.reply("⏳ Instalando 7-Zip... (isso pode levar 30 segundos)")
-    
-    try:
-        if instalar_7zip():
-            if verificar_7zip():
-                await msg.edit(content="✅ **7-Zip instalado com sucesso!**\nAgora os testes de entrega vão funcionar!")
-                await log_admin("7-Zip Instalado", ctx.author, "Instalação concluída com sucesso")
-            else:
-                await msg.edit(content="⚠️ Instalação concluída mas 7z não respondeu. Tente reiniciar o bot.")
-        else:
-            await msg.edit(content="❌ Falha na instalação. Tente novamente ou use o terminal do Railway.")
-            
-    except Exception as e:
-        await msg.edit(content=f"❌ Erro ao executar: {e}")
+    msg = await ctx.reply("⏳ Instalando 7-Zip... (até 30 segundos)")
+    if instalar_7zip() and verificar_7zip():
+        await msg.edit(content="✅ **7-Zip instalado com sucesso!**")
+        await log_admin("7-Zip Instalado", ctx.author, "Instalação concluída")
+    else:
+        await msg.edit(content="❌ Falha na instalação. Tente novamente ou instale manualmente `p7zip-full`.")
 
-# ================= EVENTOS =================
+# ================= EVENTOS PRINCIPAIS =================
 @bot.event
 async def on_ready():
     print(f"✅ Bot online: {bot.user}")
     if not await init_db():
+        print("❌ Falha crítica no banco de dados.")
         return
-    
     if not verificar_7zip():
-        print("⚠️  7-Zip NÃO encontrado! Tentando instalar automaticamente...")
+        print("⚠️ 7-Zip não encontrado. Tentando instalar...")
         if instalar_7zip():
             print("✅ 7-Zip instalado com sucesso!")
         else:
-            print("❌ Não foi possível instalar o 7-Zip. Use !instalar7z.")
+            print("❌ Falha na instalação do 7-Zip. Use !instalar7z.")
     else:
         print("✅ 7-Zip disponível")
-    
     guild = await get_guild()
     if guild is None:
-        print(f"❌ Servidor {GUILD_ID} não encontrado. Configure GUILD_ID!")
-    else:
-        print(f"✅ Servidor: {guild.name}")
-    
-    asyncio.create_task(start_server())
-    
-    if guild:
-        await atualizar_loja()
-        await atualizar_vendas()
-    
-    print("✅ Pronto!")
+        print(f"❌ Servidor {GUILD_ID} não encontrado. Verifique GUILD_ID!")
+        return
+    print(f"✅ Servidor: {guild.name}")
+    await start_server()
+    await atualizar_loja()
+    await atualizar_vendas()
+    print("✅ Bot pronto para uso!")
 
 @bot.event
 async def on_interaction(interaction: discord.Interaction):
@@ -910,6 +826,6 @@ async def on_interaction(interaction: discord.Interaction):
     elif custom_id.startswith("cancel_"):
         await interaction.response.send_message("❌ Pedido cancelado.", ephemeral=True)
 
-# ================= MAIN =================
+# ================= INÍCIO =================
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
