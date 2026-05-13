@@ -1,4 +1,4 @@
-# bot.py - BANIDA STORE (Completo e Corrigido)
+# bot.py - BANIDA STORE (Completo com Botão Copiar PIX)
 import discord
 from discord.ext import commands
 from discord import Embed, PartialEmoji
@@ -694,14 +694,51 @@ async def entregar_produto(user, produto: dict, pedido_id: str, guild, dados_arq
     else:
         await log_admin("Teste de Entrega", user, f"Pedido `{pedido_id}` | Produto: {produto['nome']}")
 
-# ================= PAGAMENTO CORRIGIDO =================
+# ================= PAGAMENTO COM BOTÃO COPIAR PIX =================
+class PixView(discord.ui.View):
+    def __init__(self, codigo_pix, payment_id, produto, user, guild):
+        super().__init__(timeout=300)
+        self.codigo_pix = codigo_pix
+        self.payment_id = payment_id
+        self.produto = produto
+        self.user = user
+        self.guild = guild
+
+    @discord.ui.button(label="📋 Copiar PIX", style=discord.ButtonStyle.secondary, emoji="📋")
+    async def copy_pix(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message(
+            f"```\n{self.codigo_pix}\n```\n✅ **Código PIX copiado!**\nAgora cole no seu banco/app de pagamento.",
+            ephemeral=True
+        )
+
+    @discord.ui.button(label="✅ JÁ PAGUEI", style=discord.ButtonStyle.success, emoji="✅")
+    async def check_payment(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            info = sdk.payment().get(self.payment_id)
+            status = info["response"].get("status")
+            if status == "approved":
+                await interaction.followup.send("✅ Pagamento aprovado! Canal de entrega criado em 5 minutos.", ephemeral=True)
+            elif status == "pending":
+                await interaction.followup.send("⏳ Pagamento ainda pendente. Aguarde a confirmação do banco.", ephemeral=True)
+            elif status == "rejected":
+                await interaction.followup.send("❌ Pagamento recusado. Tente novamente.", ephemeral=True)
+            else:
+                await interaction.followup.send(f"ℹ️ Status atual: `{status}`", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Erro ao verificar: {e}", ephemeral=True)
+
+    @discord.ui.button(label="❌ CANCELAR", style=discord.ButtonStyle.danger, emoji="❌")
+    async def cancel_payment(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("❌ Pedido cancelado. O PIX não será mais válido.", ephemeral=True)
+
 async def iniciar_pagamento(interaction: discord.Interaction, produto_id: str):
     produtos = await get_produtos()
     produto = produtos.get(produto_id)
     if not produto:
         return await interaction.followup.send("❌ Produto não encontrado.", ephemeral=True)
 
-    # 🔧 CORREÇÃO: formata o preco corretamente
+    # Formata o preço corretamente
     try:
         preco_str = str(produto["preco"]).replace(",", ".")
         valor = float(preco_str)
@@ -764,18 +801,24 @@ async def iniciar_pagamento(interaction: discord.Interaction, produto_id: str):
         await add_pedido(pedido_id, interaction.user.id, produto_id, produto["nome"], produto["preco"])
         pedidos_pendentes[pay_id] = pedido_id
 
+        # Remove aspas do PIX (se houver)
+        pix_limpo = pix.strip('"\'')
+
         embed = criar_embed(titulo="💳 PAGAMENTO VIA PIX",
                             descricao=f"**{produto['emoji']} {produto['nome']}**\n💰 **{formatar_preco(valor)}**",
                             cor=COR_PENDENTE)
-        embed.add_field(name="📋 Código PIX", value=f"```\n{pix[:300]}\n```", inline=False)
-        embed.add_field(name="📱 Como Pagar", value="Copie o código → Pague no banco → Clique em ✅ JÁ PAGUEI", inline=False)
+        
+        embed.add_field(name="📋 Código PIX", value=f"```\n{pix_limpo}\n```", inline=False)
+        embed.add_field(name="⏰ Validade", value="**30 minutos**", inline=True)
+        embed.add_field(name="🏢 Destinatário", value="**BANIDA STORE**", inline=True)
+        embed.add_field(name="📱 Como Pagar", 
+                        value="1️⃣ Clique no botão **📋 Copiar PIX** abaixo\n2️⃣ Cole no seu banco/app de pagamento\n3️⃣ Pague via PIX\n4️⃣ Clique em **✅ JÁ PAGUEI** após pagar", 
+                        inline=False)
 
-        view = discord.ui.View()
-        view.add_item(discord.ui.Button(label="✅ JÁ PAGUEI", style=discord.ButtonStyle.success, custom_id=f"check_{pay_id}"))
-        view.add_item(discord.ui.Button(label="❌ CANCELAR", style=discord.ButtonStyle.danger, custom_id=f"cancel_{pay_id}"))
-
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
         guild = interaction.guild or await get_guild()
+        view = PixView(pix_limpo, pay_id, produto, interaction.user, guild)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        
         asyncio.create_task(verificar_pagamento(pay_id, pedido_id, interaction.user, produto, guild))
 
     except Exception as e:
@@ -1044,18 +1087,11 @@ async def on_interaction(interaction: discord.Interaction):
     if interaction.type != discord.InteractionType.component:
         return
     custom_id = interaction.data.get("custom_id", "")
-    if custom_id.startswith("check_"):
-        await interaction.response.defer(ephemeral=True)
-        pay_id = int(custom_id.split("_")[1])
-        try:
-            info = sdk.payment().get(pay_id)
-            status = info["response"].get("status")
-            msgs = {"approved": "✅ Aprovado! Canal criado por 5 min.", "pending": "⏳ Pendente.", "rejected": "❌ Recusado."}
-            await interaction.followup.send(msgs.get(status, f"Status: `{status}`"), ephemeral=True)
-        except:
-            await interaction.followup.send("❌ Erro ao verificar.", ephemeral=True)
-    elif custom_id.startswith("cancel_"):
-        await interaction.response.send_message("❌ Pedido cancelado.", ephemeral=True)
+    # Os botões do PIX agora são tratados pela própria view PixView
+    # Apenas mantemos os checks antigos para compatibilidade (se necessário)
+    if custom_id.startswith("check_") or custom_id.startswith("cancel_"):
+        # As views já tratam esses botões, então ignoramos aqui para evitar duplicidade
+        pass
 
 # ================= INÍCIO =================
 if __name__ == "__main__":
