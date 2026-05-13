@@ -815,10 +815,39 @@ async def iniciar_pagamento(interaction: discord.Interaction, produto_id: str):
         }
         payment = sdk.payment().create(payment_data)
         resp = payment["response"]
+
+        # Verifica se a API retornou erro antes de tentar ler o PIX
+        status_code = payment.get("status")
+        if status_code and int(status_code) >= 400:
+            erro_msg = resp.get("message") or resp.get("error") or str(resp)
+            print(f"[MP ERRO {status_code}] {erro_msg}\nResposta completa: {resp}")
+            await log_admin("❌ Erro Pagamento MP", interaction.user,
+                            f"Produto: **{produto['nome']}**\nCódigo: `{status_code}`\nErro: `{erro_msg[:300]}`",
+                            cor=COR_ERRO)
+            return await interaction.followup.send(
+                f"❌ Não foi possível gerar o PIX.\n"
+                f"> **Motivo:** `{erro_msg[:200]}`\n"
+                f"> Tente novamente ou contate o suporte.",
+                ephemeral=True
+            )
+
+        # Verifica se o campo do PIX existe na resposta
+        pix_data = resp.get("point_of_interaction", {}).get("transaction_data", {})
+        pix = pix_data.get("qr_code")
+        if not pix:
+            print(f"[MP] Resposta sem qr_code: {resp}")
+            await log_admin("❌ Erro PIX sem qr_code", interaction.user,
+                            f"Produto: **{produto['nome']}**\nResposta: `{str(resp)[:300]}`",
+                            cor=COR_ERRO)
+            return await interaction.followup.send(
+                "❌ Erro ao gerar o PIX: resposta inválida do Mercado Pago.\n"
+                "> Verifique se sua conta MP tem o PIX habilitado e o token está correto.",
+                ephemeral=True
+            )
+
+        pay_id = resp["id"]
         pedido_id = str(uuid.uuid4())
         await add_pedido(pedido_id, interaction.user.id, produto_id, produto["nome"], produto["preco"])
-        pix = resp["point_of_interaction"]["transaction_data"]["qr_code"]
-        pay_id = resp["id"]
         pedidos_pendentes[pay_id] = pedido_id
         embed = criar_embed(titulo="💳 PAGAMENTO VIA PIX", descricao=f"**{produto['emoji']} {produto['nome']}**\n💰 **{formatar_preco(produto['preco'])}**", cor=COR_PENDENTE)
         embed.add_field(name="📋 Código PIX", value=f"```\n{pix[:300]}\n```", inline=False)
@@ -830,7 +859,8 @@ async def iniciar_pagamento(interaction: discord.Interaction, produto_id: str):
         guild = interaction.guild or await get_guild()
         asyncio.create_task(verificar_pagamento(pay_id, pedido_id, interaction.user, produto, guild))
     except Exception as e:
-        await interaction.followup.send(f"❌ Erro: {str(e)[:200]}", ephemeral=True)
+        print(f"[PAGAMENTO EXCEÇÃO] {type(e).__name__}: {e}")
+        await interaction.followup.send(f"❌ Erro inesperado ao gerar pagamento: `{str(e)[:200]}`", ephemeral=True)
 
 async def verificar_pagamento(payment_id, pedido_id, user, produto, guild):
     for _ in range(30):
