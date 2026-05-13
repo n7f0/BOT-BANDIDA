@@ -1,4 +1,4 @@
-# bot.py - BANIDA STORE com Sistema de Tickets (totalmente funcional)
+# bot.py - BANIDA STORE com Tickets (Select) + Painel Admin Fixo
 import discord
 from discord.ext import commands
 from discord import Embed, Color, PartialEmoji
@@ -31,6 +31,7 @@ CANAL_LOG_VENDAS = os.getenv("CANAL_LOG_VENDAS")
 CANAL_LOG_ADMIN  = os.getenv("CANAL_LOG_ADMIN")
 CANAL_TICKET_PANEL = os.getenv("CANAL_TICKET_PANEL", "1504161545662496768")
 CATEGORIA_TICKETS = os.getenv("CATEGORIA_TICKETS", "1504164472502091796")
+CANAL_PAINEL_ADMIN = os.getenv("CANAL_PAINEL_ADMIN", "1504170405953273979")
 
 # Validação obrigatória
 missing = []
@@ -57,6 +58,7 @@ CANAL_LOJA      = int(CANAL_LOJA)
 CANAL_VENDAS    = int(CANAL_VENDAS)
 CANAL_TICKET_PANEL = int(CANAL_TICKET_PANEL)
 CATEGORIA_TICKETS = int(CATEGORIA_TICKETS)
+CANAL_PAINEL_ADMIN = int(CANAL_PAINEL_ADMIN)
 if CANAL_LOG_VENDAS:
     CANAL_LOG_VENDAS = int(CANAL_LOG_VENDAS)
 if CANAL_LOG_ADMIN:
@@ -256,7 +258,105 @@ async def log_admin(acao, admin, detalhes, cor=COR_DESTAQUE):
     embed.add_field(name="👑 Admin", value=f"<@{admin.id}> ({admin.name})", inline=True)
     await canal.send(embed=embed)
 
-# ================= SISTEMA DE TICKETS (CORRIGIDO) =================
+# ================= SISTEMA DE TICKETS COM SELECT =================
+class TicketSelect(discord.ui.Select):
+    def __init__(self, user):
+        self.user = user
+        options = [
+            discord.SelectOption(label="📖 Tirar dúvidas sobre conteúdo", value="duvidas", emoji="📖", description="Esclareça suas dúvidas sobre os produtos"),
+            discord.SelectOption(label="🛒 Compras", value="compras", emoji="🛒", description="Problemas ou informações sobre sua compra")
+        ]
+        super().__init__(placeholder="Selecione o motivo do ticket...", options=options, custom_id="ticket_tipo")
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user.id:
+            return await interaction.response.send_message("❌ Este menu não é para você.", ephemeral=True)
+        
+        await interaction.response.defer(ephemeral=True)
+        tipo = self.values[0]
+        await criar_ticket(interaction, self.user, tipo)
+
+class AbrirTicketView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="🎫 Abrir Ticket", style=discord.ButtonStyle.primary, emoji="🎫", custom_id="abrir_ticket_btn")
+    async def abrir_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user = interaction.user
+        
+        # Verifica se já tem ticket aberto
+        if user.id in tickets_ativos:
+            canal_existente = bot.get_channel(tickets_ativos[user.id])
+            if canal_existente:
+                embed = discord.Embed(
+                    title="❌ Você já possui um ticket aberto!",
+                    description=f"Acesse-o em: {canal_existente.mention}",
+                    color=COR_ERRO
+                )
+                return await interaction.response.send_message(embed=embed, ephemeral=True)
+            else:
+                del tickets_ativos[user.id]
+        
+        # Mostra o select
+        view = discord.ui.View()
+        view.add_item(TicketSelect(user))
+        await interaction.response.send_message("📌 **Selecione o motivo do atendimento:**", view=view, ephemeral=True)
+
+async def criar_ticket(interaction: discord.Interaction, user: discord.User, tipo: str):
+    guild = interaction.guild
+    categoria = guild.get_channel(CATEGORIA_TICKETS)
+    if not categoria:
+        return await interaction.followup.send(f"❌ Categoria `{CATEGORIA_TICKETS}` não encontrada. Avise o administrador.", ephemeral=True)
+
+    # Permissões
+    overwrites = {
+        guild.default_role: discord.PermissionOverwrite(read_messages=False),
+        guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True, manage_channels=True, attach_files=True),
+        user: discord.PermissionOverwrite(read_messages=True, send_messages=True, attach_files=True)
+    }
+    cargo_admin = guild.get_role(CARGO_DONO)
+    if cargo_admin:
+        overwrites[cargo_admin] = discord.PermissionOverwrite(read_messages=True, send_messages=True, manage_messages=True)
+
+    # Define nome e embed baseado no tipo
+    if tipo == "duvidas":
+        nome_canal = f"duvidas-{user.name.lower().replace(' ', '-')[:15]}"
+        titulo_msg = "📖 Dúvidas sobre Conteúdo"
+        descricao_msg = "Olá! Em breve um atendente irá esclarecer suas dúvidas sobre os produtos."
+    else:
+        nome_canal = f"compras-{user.name.lower().replace(' ', '-')[:15]}"
+        titulo_msg = "🛒 Atendimento de Compras"
+        descricao_msg = "Olá! Informe o número do seu pedido ou detalhes da compra para que possamos ajudar."
+
+    try:
+        canal = await guild.create_text_channel(
+            name=nome_canal,
+            category=categoria,
+            overwrites=overwrites,
+            reason=f"Ticket de {tipo} aberto por {user.name}"
+        )
+    except discord.Forbidden:
+        return await interaction.followup.send("❌ Sem permissão para criar canais. O bot precisa de permissão **Gerenciar Canais** e acesso à categoria.", ephemeral=True)
+    except Exception as e:
+        return await interaction.followup.send(f"❌ Erro ao criar canal: {e}", ephemeral=True)
+
+    tickets_ativos[user.id] = canal.id
+
+    embed_ticket = discord.Embed(
+        title=f"🌸 BANIDA STORE - {titulo_msg}",
+        description=f"{descricao_msg}\n\n{user.mention}, descreva sua solicitação detalhadamente.\n\n**Para fechar o ticket, use o botão abaixo.**",
+        color=COR_PRINCIPAL
+    )
+    embed_ticket.set_footer(text=f"Ticket de {tipo} • Aguarde o atendimento")
+    embed_ticket.timestamp = datetime.utcnow()
+
+    view = FecharTicketView(user.id, canal.id)
+    await canal.send(embed=embed_ticket, view=view)
+    await canal.send(f"{user.mention} 👋")
+
+    await log_admin("Ticket Aberto", user, f"Canal `{canal.name}` criado na categoria {categoria.name} - Tipo: {tipo}", cor=COR_SUCESSO)
+    await interaction.followup.send(f"✅ Ticket criado! Acesse: {canal.mention}", ephemeral=True)
+
 class FecharTicketView(discord.ui.View):
     def __init__(self, user_id, channel_id):
         super().__init__(timeout=None)
@@ -298,179 +398,6 @@ class ConfirmarFechamentoView(discord.ui.View):
     @discord.ui.button(label="❌ Cancelar", style=discord.ButtonStyle.secondary)
     async def cancelar(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message("✅ Fechamento cancelado.", ephemeral=True)
-
-class AbrirTicketButton(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(label="🎫 Abrir Ticket", style=discord.ButtonStyle.primary, emoji="🎫", custom_id="abrir_ticket_btn")
-    async def abrir_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Defer imediato para evitar timeout
-        await interaction.response.defer(ephemeral=True)
-        
-        user = interaction.user
-        guild = interaction.guild
-
-        # Verifica se já tem ticket aberto
-        if user.id in tickets_ativos:
-            canal_existente = bot.get_channel(tickets_ativos[user.id])
-            if canal_existente:
-                embed = discord.Embed(
-                    title="❌ Você já possui um ticket aberto!",
-                    description=f"Acesse-o em: {canal_existente.mention}",
-                    color=COR_ERRO
-                )
-                return await interaction.followup.send(embed=embed, ephemeral=True)
-            else:
-                del tickets_ativos[user.id]
-
-        # Busca categoria
-        categoria = guild.get_channel(CATEGORIA_TICKETS)
-        if not categoria:
-            await interaction.followup.send(f"❌ Categoria `{CATEGORIA_TICKETS}` não encontrada. Avise o administrador.", ephemeral=True)
-            return
-
-        # Permissões
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(read_messages=False),
-            guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True, manage_channels=True, attach_files=True),
-            user: discord.PermissionOverwrite(read_messages=True, send_messages=True, attach_files=True)
-        }
-        cargo_admin = guild.get_role(CARGO_DONO)
-        if cargo_admin:
-            overwrites[cargo_admin] = discord.PermissionOverwrite(read_messages=True, send_messages=True, manage_messages=True)
-
-        nome_canal = f"ticket-{user.name.lower().replace(' ', '-')[:20]}"
-        try:
-            canal = await guild.create_text_channel(
-                name=nome_canal,
-                category=categoria,
-                overwrites=overwrites,
-                reason=f"Ticket aberto por {user.name}"
-            )
-        except discord.Forbidden:
-            await interaction.followup.send("❌ Sem permissão para criar canais. O bot precisa de permissão **Gerenciar Canais** e acesso à categoria.", ephemeral=True)
-            return
-        except Exception as e:
-            await interaction.followup.send(f"❌ Erro ao criar canal: {e}", ephemeral=True)
-            return
-
-        tickets_ativos[user.id] = canal.id
-
-        embed_ticket = discord.Embed(
-            title="🌸 BANIDA STORE - Central de Atendimento",
-            description=f"Olá {user.mention}!\n\nUm atendente irá ajudá-lo em breve.\nDescreva seu problema ou dúvida sobre a compra.\n\n**Para fechar, use o botão abaixo.**",
-            color=COR_PRINCIPAL
-        )
-        embed_ticket.set_footer(text="Ticket aberto • Aguarde o atendimento")
-        embed_ticket.timestamp = datetime.utcnow()
-
-        view = FecharTicketView(user.id, canal.id)
-        await canal.send(embed=embed_ticket, view=view)
-        await canal.send(f"{user.mention} 👋")
-
-        await log_admin("Ticket Aberto", user, f"Canal `{canal.name}` criado na categoria {categoria.name}.", cor=COR_SUCESSO)
-        await interaction.followup.send(f"✅ Ticket criado! Acesse: {canal.mention}", ephemeral=True)
-
-# ================= CRIPTOGRAFIA 7ZIP =================
-def _criar_7z_sync(dados: bytes, nome_original: str, senha: str) -> bytes:
-    tmp = tempfile.mkdtemp(prefix="banida_")
-    try:
-        caminho_original = os.path.join(tmp, nome_original)
-        with open(caminho_original, "wb") as f:
-            f.write(dados)
-        caminho_saida = os.path.join(tmp, "entrega.7z")
-        subprocess.run(
-            ["7z", "a", f"-p{senha}", "-mhe=on", "-mx=0", caminho_saida, caminho_original],
-            capture_output=True, text=True, timeout=120, check=True
-        )
-        with open(caminho_saida, "rb") as f:
-            return f.read()
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
-
-async def criar_7z_criptografado(dados: bytes, nome_original: str, senha: str) -> bytes:
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _criar_7z_sync, dados, nome_original, senha)
-
-# ================= ENTREGA DE PRODUTOS =================
-async def entregar_produto(user, produto: dict, pedido_id: str, guild, dados_arquivo_override: bytes = None, nome_arquivo_override: str = None):
-    senha_arquivo = None
-    tem_arquivo = False
-    dados_raw = None
-    nome_original = None
-
-    if dados_arquivo_override is not None:
-        tem_arquivo = True
-        senha_arquivo = gerar_senha_arquivo()
-        dados_raw = dados_arquivo_override
-        nome_original = nome_arquivo_override or "arquivo_banida"
-    else:
-        prod_completo = await get_produto_completo(produto["id"])
-        if prod_completo and prod_completo["arquivo_data"] is not None:
-            tem_arquivo = True
-            senha_arquivo = gerar_senha_arquivo()
-            dados_raw = bytes(prod_completo["arquivo_data"])
-            nome_original = prod_completo["arquivo_nome"] or f"produto_{produto['id']}"
-
-    overwrites = {
-        guild.default_role: discord.PermissionOverwrite(read_messages=False),
-        guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True, attach_files=True),
-        user: discord.PermissionOverwrite(read_messages=True, send_messages=True)
-    }
-    cargo_dono = guild.get_role(CARGO_DONO)
-    if cargo_dono:
-        overwrites[cargo_dono] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
-
-    nome_canal = f"🛒-compra-{user.name.lower().replace(' ', '-')[:20]}"
-    try:
-        canal_temp = await guild.create_text_channel(name=nome_canal, overwrites=overwrites, reason=f"Entrega para {user.name}")
-    except Exception as e:
-        await log_admin("Erro Entrega", user, f"Não foi possível criar canal de entrega: {e}")
-        return
-
-    embed = discord.Embed(
-        title="🌸  BANIDA STORE — COMPRA APROVADA",
-        description=f"> Olá, **{user.display_name}**! Seu pagamento foi **confirmado**.\n> ⚠️ **Este canal será excluído em 5 minutos!**\n> 🔐 **A key é de uso único** — após extrair, o canal será destruído.",
-        color=0xFF69B4
-    )
-    embed.set_thumbnail(url=user.display_avatar.url if user.display_avatar else None)
-    embed.add_field(name="**━━━━━━━━━━━━━━━━━━━━**", value="\u200b", inline=False)
-    embed.add_field(name="**📦  Produto**",   value=f"{produto['emoji']}  {produto['nome']}", inline=True)
-    embed.add_field(name="**💳  Valor Pago**", value=f"`{formatar_preco(produto['preco'])}`", inline=True)
-    embed.add_field(name="**🆔  Pedido**",     value=f"`{pedido_id}`", inline=True)
-    embed.add_field(name="**━━━━━━━━━━━━━━━━━━━━**", value="\u200b", inline=False)
-
-    if tem_arquivo:
-        embed.add_field(name="**🔐  Senha do Arquivo `.7z`**", value=f"```\n{senha_arquivo}\n```", inline=False)
-        embed.add_field(name="**📂  Como extrair**", value="**1.** Baixe o arquivo `.7z` abaixo **AGORA**\n**2.** Instale o **[7-Zip](https://7-zip.org)**\n**3.** Extraia com a senha acima\n\n⚠️ **KEY DE USO ÚNICO** — Canal será deletado em 5 minutos", inline=False)
-        embed.set_footer(text="🌸 BANIDA STORE  •  5 minutos para baixar!")
-        embed.timestamp = datetime.utcnow()
-
-        if not verificar_7zip():
-            await canal_temp.send("⚠️ 7-Zip não está instalado no servidor. Peça ao administrador para executar `!instalar7z`.")
-        else:
-            dados_cifrados = await criar_7z_criptografado(dados_raw, nome_original, senha_arquivo)
-            nome_saida = f"banida_{produto['id']}_{pedido_id[:8]}.7z"
-            arquivo_discord = discord.File(fp=io.BytesIO(dados_cifrados), filename=nome_saida)
-            await canal_temp.send(embed=embed, file=arquivo_discord)
-    else:
-        embed.add_field(name="**✅  Próximos passos**", value="Produto ativado. Abra um ticket se precisar.", inline=False)
-        await canal_temp.send(embed=embed)
-
-    async def remover_canal():
-        await asyncio.sleep(300)
-        try:
-            await canal_temp.delete(reason="Canal de entrega expirado (5 min)")
-        except:
-            pass
-    asyncio.create_task(remover_canal())
-
-    if not pedido_id.startswith("TESTE-"):
-        await registrar_venda_realizada(pedido_id, user.id, produto["nome"], produto["preco"])
-        await log_venda(pedido_id, user, produto["nome"], produto["preco"], senha_arquivo)
-    else:
-        await log_admin("Teste de Entrega", user, f"Pedido `{pedido_id}` | Produto: {produto['nome']}")
 
 # ================= LOJA (MODAIS, SELECTS, VIEWS) =================
 class ProdutoModal(discord.ui.Modal, title="✨ Adicionar Produto"):
@@ -752,6 +679,106 @@ async def verificar_pagamento(payment_id, pedido_id, user, produto, guild):
             pass
     await update_pedido(pedido_id, "expirado")
 
+# ================= ENTREGA DE PRODUTOS =================
+async def entregar_produto(user, produto: dict, pedido_id: str, guild, dados_arquivo_override: bytes = None, nome_arquivo_override: str = None):
+    senha_arquivo = None
+    tem_arquivo = False
+    dados_raw = None
+    nome_original = None
+
+    if dados_arquivo_override is not None:
+        tem_arquivo = True
+        senha_arquivo = gerar_senha_arquivo()
+        dados_raw = dados_arquivo_override
+        nome_original = nome_arquivo_override or "arquivo_banida"
+    else:
+        prod_completo = await get_produto_completo(produto["id"])
+        if prod_completo and prod_completo["arquivo_data"] is not None:
+            tem_arquivo = True
+            senha_arquivo = gerar_senha_arquivo()
+            dados_raw = bytes(prod_completo["arquivo_data"])
+            nome_original = prod_completo["arquivo_nome"] or f"produto_{produto['id']}"
+
+    overwrites = {
+        guild.default_role: discord.PermissionOverwrite(read_messages=False),
+        guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True, attach_files=True),
+        user: discord.PermissionOverwrite(read_messages=True, send_messages=True)
+    }
+    cargo_dono = guild.get_role(CARGO_DONO)
+    if cargo_dono:
+        overwrites[cargo_dono] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+
+    nome_canal = f"🛒-compra-{user.name.lower().replace(' ', '-')[:20]}"
+    try:
+        canal_temp = await guild.create_text_channel(name=nome_canal, overwrites=overwrites, reason=f"Entrega para {user.name}")
+    except Exception as e:
+        await log_admin("Erro Entrega", user, f"Não foi possível criar canal de entrega: {e}")
+        return
+
+    embed = discord.Embed(
+        title="🌸  BANIDA STORE — COMPRA APROVADA",
+        description=f"> Olá, **{user.display_name}**! Seu pagamento foi **confirmado**.\n> ⚠️ **Este canal será excluído em 5 minutos!**\n> 🔐 **A key é de uso único** — após extrair, o canal será destruído.",
+        color=0xFF69B4
+    )
+    embed.set_thumbnail(url=user.display_avatar.url if user.display_avatar else None)
+    embed.add_field(name="**━━━━━━━━━━━━━━━━━━━━**", value="\u200b", inline=False)
+    embed.add_field(name="**📦  Produto**",   value=f"{produto['emoji']}  {produto['nome']}", inline=True)
+    embed.add_field(name="**💳  Valor Pago**", value=f"`{formatar_preco(produto['preco'])}`", inline=True)
+    embed.add_field(name="**🆔  Pedido**",     value=f"`{pedido_id}`", inline=True)
+    embed.add_field(name="**━━━━━━━━━━━━━━━━━━━━**", value="\u200b", inline=False)
+
+    if tem_arquivo:
+        embed.add_field(name="**🔐  Senha do Arquivo `.7z`**", value=f"```\n{senha_arquivo}\n```", inline=False)
+        embed.add_field(name="**📂  Como extrair**", value="**1.** Baixe o arquivo `.7z` abaixo **AGORA**\n**2.** Instale o **[7-Zip](https://7-zip.org)**\n**3.** Extraia com a senha acima\n\n⚠️ **KEY DE USO ÚNICO** — Canal será deletado em 5 minutos", inline=False)
+        embed.set_footer(text="🌸 BANIDA STORE  •  5 minutos para baixar!")
+        embed.timestamp = datetime.utcnow()
+
+        if not verificar_7zip():
+            await canal_temp.send("⚠️ 7-Zip não está instalado no servidor. Peça ao administrador para executar `!instalar7z`.")
+        else:
+            dados_cifrados = await criar_7z_criptografado(dados_raw, nome_original, senha_arquivo)
+            nome_saida = f"banida_{produto['id']}_{pedido_id[:8]}.7z"
+            arquivo_discord = discord.File(fp=io.BytesIO(dados_cifrados), filename=nome_saida)
+            await canal_temp.send(embed=embed, file=arquivo_discord)
+    else:
+        embed.add_field(name="**✅  Próximos passos**", value="Produto ativado. Abra um ticket se precisar.", inline=False)
+        await canal_temp.send(embed=embed)
+
+    async def remover_canal():
+        await asyncio.sleep(300)
+        try:
+            await canal_temp.delete(reason="Canal de entrega expirado (5 min)")
+        except:
+            pass
+    asyncio.create_task(remover_canal())
+
+    if not pedido_id.startswith("TESTE-"):
+        await registrar_venda_realizada(pedido_id, user.id, produto["nome"], produto["preco"])
+        await log_venda(pedido_id, user, produto["nome"], produto["preco"], senha_arquivo)
+    else:
+        await log_admin("Teste de Entrega", user, f"Pedido `{pedido_id}` | Produto: {produto['nome']}")
+
+# ================= CRIPTOGRAFIA 7ZIP =================
+def _criar_7z_sync(dados: bytes, nome_original: str, senha: str) -> bytes:
+    tmp = tempfile.mkdtemp(prefix="banida_")
+    try:
+        caminho_original = os.path.join(tmp, nome_original)
+        with open(caminho_original, "wb") as f:
+            f.write(dados)
+        caminho_saida = os.path.join(tmp, "entrega.7z")
+        subprocess.run(
+            ["7z", "a", f"-p{senha}", "-mhe=on", "-mx=0", caminho_saida, caminho_original],
+            capture_output=True, text=True, timeout=120, check=True
+        )
+        with open(caminho_saida, "rb") as f:
+            return f.read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+async def criar_7z_criptografado(dados: bytes, nome_original: str, senha: str) -> bytes:
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _criar_7z_sync, dados, nome_original, senha)
+
 # ================= ATUALIZAÇÃO DA VITRINE =================
 async def montar_embed_loja():
     produtos = await get_produtos()
@@ -924,9 +951,24 @@ async def criar_painel_ticket(ctx):
     embed.set_footer(text="🌸 BANIDA STORE • Atendimento rápido")
     embed.timestamp = datetime.utcnow()
     
-    view = AbrirTicketButton()
+    view = AbrirTicketView()
     await canal.send(embed=embed, view=view)
     await ctx.send(f"✅ Painel de tickets enviado em {canal.mention}!", delete_after=5)
+
+@bot.command(name="painel_admin")
+@commands.has_permissions(administrator=True)
+async def cmd_painel_admin(ctx):
+    """Envia o painel de administração no canal especificado."""
+    canal = bot.get_channel(CANAL_PAINEL_ADMIN)
+    if not canal:
+        return await ctx.send(f"❌ Canal {CANAL_PAINEL_ADMIN} não encontrado. Verifique CANAL_PAINEL_ADMIN.")
+    
+    embed = criar_embed(titulo="🌸 BANIDA STORE - Painel Administrativo",
+                        descricao="Utilize os botões abaixo para gerenciar os produtos e o sistema.",
+                        cor=COR_DESTAQUE)
+    view = AdminView()
+    await canal.send(embed=embed, view=view)
+    await ctx.send(f"✅ Painel admin enviado em {canal.mention}!", delete_after=5)
 
 # ================= EVENTOS =================
 @bot.event
@@ -955,7 +997,6 @@ async def on_ready():
     # Envia o painel de tickets automaticamente (limpa mensagens antigas)
     canal_ticket = bot.get_channel(CANAL_TICKET_PANEL)
     if canal_ticket:
-        # Limpa mensagens do bot no canal para evitar duplicação
         async for msg in canal_ticket.history(limit=20):
             if msg.author == bot.user:
                 try: await msg.delete()
@@ -967,11 +1008,27 @@ async def on_ready():
         )
         embed.set_footer(text="🌸 BANIDA STORE • Atendimento rápido")
         embed.timestamp = datetime.utcnow()
-        view = AbrirTicketButton()
+        view = AbrirTicketView()
         await canal_ticket.send(embed=embed, view=view)
         print("✅ Painel de tickets enviado automaticamente.")
     else:
         print(f"⚠️ Canal de ticket {CANAL_TICKET_PANEL} não encontrado. Use !criar_painel_ticket.")
+
+    # Envia o painel de admin automaticamente no canal especificado
+    canal_admin = bot.get_channel(CANAL_PAINEL_ADMIN)
+    if canal_admin:
+        async for msg in canal_admin.history(limit=20):
+            if msg.author == bot.user:
+                try: await msg.delete()
+                except: pass
+        embed = criar_embed(titulo="🌸 BANIDA STORE - Painel Administrativo",
+                            descricao="Utilize os botões abaixo para gerenciar os produtos e o sistema.",
+                            cor=COR_DESTAQUE)
+        view = AdminView()
+        await canal_admin.send(embed=embed, view=view)
+        print("✅ Painel admin enviado automaticamente.")
+    else:
+        print(f"⚠️ Canal do painel admin {CANAL_PAINEL_ADMIN} não encontrado. Use !painel_admin.")
 
     print("✅ Bot pronto para uso!")
 
@@ -992,7 +1049,7 @@ async def on_interaction(interaction: discord.Interaction):
             await interaction.followup.send("❌ Erro ao verificar.", ephemeral=True)
     elif custom_id.startswith("cancel_"):
         await interaction.response.send_message("❌ Pedido cancelado.", ephemeral=True)
-    # O botão de ticket tem sua própria view e callback; não precisa de tratamento adicional aqui
+    # O select de ticket já tem seu próprio callback; não precisa de tratamento extra aqui.
 
 # ================= INÍCIO =================
 if __name__ == "__main__":
