@@ -1,4 +1,4 @@
-# bot.py - BANIDA STORE (Tickets com 2 opções + Painel Admin)
+# bot.py - BANIDA STORE (Completo e Corrigido)
 import discord
 from discord.ext import commands
 from discord import Embed, PartialEmoji
@@ -240,7 +240,7 @@ async def log_admin(acao, admin, detalhes, cor=COR_DESTAQUE):
     embed.add_field(name="👑 Admin", value=f"<@{admin.id}> ({admin.name})", inline=True)
     await canal.send(embed=embed)
 
-# ================= SISTEMA DE TICKETS (CORRIGIDO) =================
+# ================= SISTEMA DE TICKETS =================
 class TicketSelect(discord.ui.Select):
     def __init__(self, user):
         self.user = user
@@ -251,10 +251,8 @@ class TicketSelect(discord.ui.Select):
         super().__init__(placeholder="Selecione o motivo do ticket...", options=options)
 
     async def callback(self, interaction: discord.Interaction):
-        # Resposta imediata para evitar timeout
         await interaction.response.defer(ephemeral=True)
         tipo = self.values[0]
-        # Cria o ticket em background
         asyncio.create_task(self.criar_ticket(interaction, tipo))
 
     async def criar_ticket(self, interaction: discord.Interaction, tipo: str):
@@ -516,7 +514,7 @@ class LojaButtons(discord.ui.View):
         await interaction.response.send_message(embed=embed, view=AdminView(), ephemeral=True)
 
 class AdminView(discord.ui.View):
-    def __init__(self): super().__init__(timeout=None)  # Sem timeout — botões sempre ativos
+    def __init__(self): super().__init__(timeout=None)
 
     @discord.ui.button(label="➕ Adicionar", style=discord.ButtonStyle.success, row=0)
     async def add(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -596,113 +594,14 @@ class AdminView(discord.ui.View):
             ),
             cor=COR_DESTAQUE
         )
-
-        embed.add_field(
-            name="➕ ADICIONAR PRODUTO",
-            value=(
-                "Clique em **➕ Adicionar** e preencha o formulário:\n"
-                "• **Nome** — ex: `VIP Rosa`\n"
-                "• **Preço** — ex: `49.90`\n"
-                "• **Emoji** — padrão 🛒 ou use um emoji customizado\n"
-                "• **Descrição** — breve texto exibido na loja\n"
-                "Após salvar, anote o **ID gerado** (ex: `ab12cd`) para vincular arquivo."
-            ),
-            inline=False
-        )
-
-        embed.add_field(
-            name="📎 VINCULAR ARQUIVO AO PRODUTO",
-            value=(
-                "Depois de adicionar o produto, envie o comando no chat:\n"
-                "```!upload <id_do_produto>```"
-                "Anexe o arquivo junto com o comando (arraste ou 📎).\n"
-                "O arquivo é entregue **criptografado com senha única** ao comprador.\n"
-                "⚠️ Tamanho máximo: **25 MB**."
-            ),
-            inline=False
-        )
-
-        embed.add_field(
-            name="✏️ EDITAR PRODUTO",
-            value=(
-                "Clique em **✏️ Editar**, selecione o produto no menu e altere os campos desejados.\n"
-                "A loja é atualizada automaticamente após salvar."
-            ),
-            inline=False
-        )
-
-        embed.add_field(
-            name="🗑️ REMOVER PRODUTO",
-            value=(
-                "Clique em **🗑️ Remover** e selecione o produto.\n"
-                "⚠️ O arquivo vinculado também será removido do banco."
-            ),
-            inline=False
-        )
-
-        embed.add_field(
-            name="📂 VER ARQUIVOS",
-            value=(
-                "Lista todos os produtos que possuem arquivo vinculado,\n"
-                "mostrando nome do arquivo e tamanho em MB."
-            ),
-            inline=False
-        )
-
-        embed.add_field(
-            name="🧪 TESTE DE ENTREGA",
-            value=(
-                "Simula uma compra aprovada enviando um arquivo de teste para você.\n"
-                "Use para verificar se o bot está entregando corretamente.\n"
-                "O canal de entrega **expira em 5 minutos**."
-            ),
-            inline=False
-        )
-
-        embed.add_field(
-            name="📊 ESTATÍSTICAS",
-            value=(
-                "Exibe o total de vendas, faturamento e ticket médio.\n"
-                "Também disponível com o comando `!vendas`."
-            ),
-            inline=False
-        )
-
-        embed.add_field(
-            name="🧹 LIMPAR BANCO",
-            value=(
-                "⛔ **CUIDADO — IRREVERSÍVEL!**\n"
-                "Remove **todos** os produtos, pedidos e histórico de vendas.\n"
-                "Use apenas se quiser resetar tudo do zero."
-            ),
-            inline=False
-        )
-
-        embed.add_field(
-            name="🔧 COMANDOS EXTRAS (via chat)",
-            value=(
-                "`!upload <id>` — vincula arquivo ao produto\n"
-                "`!remover_arquivo <id>` — remove arquivo de um produto\n"
-                "`!vendas` — mostra estatísticas\n"
-                "`!check7z` — verifica se o 7-Zip está instalado\n"
-                "`!instalar7z` — instala o 7-Zip (necessário para entregar arquivos)\n"
-                "`!loja` — reenvia a vitrine no canal\n"
-                "`!painel_admin` — reenvia este painel admin"
-            ),
-            inline=False
-        )
-
-        embed.add_field(
-            name="💡 FLUXO RECOMENDADO",
-            value=(
-                "1️⃣ **Adicionar produto** → anote o ID\n"
-                "2️⃣ **Upload do arquivo** com `!upload <id>`\n"
-                "3️⃣ **Teste de entrega** para confirmar\n"
-                "4️⃣ Divulgue a loja — o bot cuida do resto! 🌸"
-            ),
-            inline=False
-        )
-
+        embed.add_field(name="➕ ADICIONAR PRODUTO", value="Clique em **➕ Adicionar** e preencha o formulário.\nApós salvar, anote o **ID gerado** para vincular arquivo.", inline=False)
+        embed.add_field(name="📎 VINCULAR ARQUIVO", value="Use o comando: `!upload <id_do_produto>` com o arquivo anexado.\nTamanho máximo: **25 MB**.", inline=False)
+        embed.add_field(name="✏️ EDITAR PRODUTO", value="Clique em **✏️ Editar**, selecione o produto e altere os campos.", inline=False)
+        embed.add_field(name="🗑️ REMOVER PRODUTO", value="Clique em **🗑️ Remover** e selecione o produto.", inline=False)
+        embed.add_field(name="📂 VER ARQUIVOS", value="Lista todos os produtos que possuem arquivo vinculado.", inline=False)
+        embed.add_field(name="🧪 TESTE DE ENTREGA", value="Simula uma compra aprovada enviando um arquivo de teste.", inline=False)
+        embed.add_field(name="📊 ESTATÍSTICAS", value="Exibe o total de vendas, faturamento e ticket médio.", inline=False)
+        embed.add_field(name="🧹 LIMPAR BANCO", value="⛔ **CUIDADO — IRREVERSÍVEL!** Remove todos os dados.", inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # ================= CRIPTOGRAFIA E ENTREGA =================
@@ -795,60 +694,68 @@ async def entregar_produto(user, produto: dict, pedido_id: str, guild, dados_arq
     else:
         await log_admin("Teste de Entrega", user, f"Pedido `{pedido_id}` | Produto: {produto['nome']}")
 
-# ================= PAGAMENTO =================
+# ================= PAGAMENTO CORRIGIDO =================
 async def iniciar_pagamento(interaction: discord.Interaction, produto_id: str):
     produtos = await get_produtos()
     produto = produtos.get(produto_id)
     if not produto:
         return await interaction.followup.send("❌ Produto não encontrado.", ephemeral=True)
-    try:
-        # Garante valor float válido com 2 casas decimais
-        valor_raw = produto["preco"]
-        if isinstance(valor_raw, str):
-            valor_raw = valor_raw.replace(",", ".").strip()
-        transaction_amount = round(float(valor_raw), 2)
-        if transaction_amount <= 0:
-            return await interaction.followup.send("❌ Preço do produto inválido. Contate o administrador.", ephemeral=True)
 
+    # 🔧 CORREÇÃO: formata o preco corretamente
+    try:
+        preco_str = str(produto["preco"]).replace(",", ".")
+        valor = float(preco_str)
+        
+        if valor <= 0:
+            return await interaction.followup.send(f"❌ Valor inválido: **{formatar_preco(valor)}**. O preço deve ser maior que zero.", ephemeral=True)
+        
+        if valor < 0.01:
+            return await interaction.followup.send(f"❌ Valor **{formatar_preco(valor)}** é muito baixo. O mínimo é R$ 0,01.", ephemeral=True)
+        
+        valor = round(valor, 2)
+        
+    except Exception as e:
+        return await interaction.followup.send(f"❌ Erro ao processar o valor do produto: `{produto['preco']}`\nErro: {e}", ephemeral=True)
+
+    print(f"[PAGAMENTO] Produto: {produto['nome']} | Valor: {valor}")
+
+    try:
         payment_data = {
-            "transaction_amount": transaction_amount,
+            "transaction_amount": valor,
             "description": f"{produto['nome']} - Banida Store",
             "payment_method_id": "pix",
             "payer": {
-                "email": f"cliente_{interaction.user.id}@email.com",
-                "first_name": (interaction.user.display_name or "Cliente")[:50],
+                "email": f"banida_{interaction.user.id}@banidastore.com.br",
+                "first_name": (interaction.user.name or "Cliente")[:50],
+                "identification": {"type": "CPF", "number": "00000000000"}
             },
             "statement_descriptor": "BANIDA STORE"
         }
+
         payment = sdk.payment().create(payment_data)
         resp = payment["response"]
 
-        # Verifica se a API retornou erro antes de tentar ler o PIX
-        status_code = payment.get("status")
-        if status_code and int(status_code) >= 400:
+        if payment.get("status") and int(payment.get("status")) >= 400:
             erro_msg = resp.get("message") or resp.get("error") or str(resp)
-            print(f"[MP ERRO {status_code}] {erro_msg}\nResposta completa: {resp}")
-            await log_admin("❌ Erro Pagamento MP", interaction.user,
-                            f"Produto: **{produto['nome']}**\nCódigo: `{status_code}`\nErro: `{erro_msg[:300]}`",
-                            cor=COR_ERRO)
-            return await interaction.followup.send(
-                f"❌ Não foi possível gerar o PIX.\n"
-                f"> **Motivo:** `{erro_msg[:200]}`\n"
-                f"> Tente novamente ou contate o suporte.",
-                ephemeral=True
-            )
+            print(f"[MP ERRO {payment.get('status')}] {erro_msg}")
+            
+            if "transaction_amount" in erro_msg.lower():
+                return await interaction.followup.send(
+                    f"❌ **Erro ao gerar PIX: valor inválido.**\n"
+                    f"> Produto: **{produto['nome']}**\n"
+                    f"> Valor: `{formatar_preco(valor)}`\n"
+                    f"> Motivo: `{erro_msg[:150]}`",
+                    ephemeral=True
+                )
+            return await interaction.followup.send(f"❌ Erro MP: `{erro_msg[:200]}`", ephemeral=True)
 
-        # Verifica se o campo do PIX existe na resposta
         pix_data = resp.get("point_of_interaction", {}).get("transaction_data", {})
         pix = pix_data.get("qr_code")
         if not pix:
             print(f"[MP] Resposta sem qr_code: {resp}")
-            await log_admin("❌ Erro PIX sem qr_code", interaction.user,
-                            f"Produto: **{produto['nome']}**\nResposta: `{str(resp)[:300]}`",
-                            cor=COR_ERRO)
             return await interaction.followup.send(
                 "❌ Erro ao gerar o PIX: resposta inválida do Mercado Pago.\n"
-                "> Verifique se sua conta MP tem o PIX habilitado e o token está correto.",
+                "> Verifique se sua conta MP tem o PIX habilitado.",
                 ephemeral=True
             )
 
@@ -856,18 +763,24 @@ async def iniciar_pagamento(interaction: discord.Interaction, produto_id: str):
         pedido_id = str(uuid.uuid4())
         await add_pedido(pedido_id, interaction.user.id, produto_id, produto["nome"], produto["preco"])
         pedidos_pendentes[pay_id] = pedido_id
-        embed = criar_embed(titulo="💳 PAGAMENTO VIA PIX", descricao=f"**{produto['emoji']} {produto['nome']}**\n💰 **{formatar_preco(produto['preco'])}**", cor=COR_PENDENTE)
+
+        embed = criar_embed(titulo="💳 PAGAMENTO VIA PIX",
+                            descricao=f"**{produto['emoji']} {produto['nome']}**\n💰 **{formatar_preco(valor)}**",
+                            cor=COR_PENDENTE)
         embed.add_field(name="📋 Código PIX", value=f"```\n{pix[:300]}\n```", inline=False)
         embed.add_field(name="📱 Como Pagar", value="Copie o código → Pague no banco → Clique em ✅ JÁ PAGUEI", inline=False)
+
         view = discord.ui.View()
         view.add_item(discord.ui.Button(label="✅ JÁ PAGUEI", style=discord.ButtonStyle.success, custom_id=f"check_{pay_id}"))
         view.add_item(discord.ui.Button(label="❌ CANCELAR", style=discord.ButtonStyle.danger, custom_id=f"cancel_{pay_id}"))
+
         await interaction.followup.send(embed=embed, view=view, ephemeral=True)
         guild = interaction.guild or await get_guild()
         asyncio.create_task(verificar_pagamento(pay_id, pedido_id, interaction.user, produto, guild))
+
     except Exception as e:
         print(f"[PAGAMENTO EXCEÇÃO] {type(e).__name__}: {e}")
-        await interaction.followup.send(f"❌ Erro inesperado ao gerar pagamento: `{str(e)[:200]}`", ephemeral=True)
+        await interaction.followup.send(f"❌ Erro inesperado: `{str(e)[:200]}`", ephemeral=True)
 
 async def verificar_pagamento(payment_id, pedido_id, user, produto, guild):
     for _ in range(30):
