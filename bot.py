@@ -802,14 +802,21 @@ async def iniciar_pagamento(interaction: discord.Interaction, produto_id: str):
     if not produto:
         return await interaction.followup.send("❌ Produto não encontrado.", ephemeral=True)
     try:
+        # Garante valor float válido com 2 casas decimais
+        valor_raw = produto["preco"]
+        if isinstance(valor_raw, str):
+            valor_raw = valor_raw.replace(",", ".").strip()
+        transaction_amount = round(float(valor_raw), 2)
+        if transaction_amount <= 0:
+            return await interaction.followup.send("❌ Preço do produto inválido. Contate o administrador.", ephemeral=True)
+
         payment_data = {
-            "transaction_amount": float(produto["preco"]),
+            "transaction_amount": transaction_amount,
             "description": f"{produto['nome']} - Banida Store",
             "payment_method_id": "pix",
             "payer": {
-                "email": f"banida_{interaction.user.id}@banidastore.com.br",
-                "first_name": (interaction.user.name or "Cliente")[:50],
-                "identification": {"type": "CPF", "number": "00000000000"}
+                "email": f"cliente_{interaction.user.id}@email.com",
+                "first_name": (interaction.user.display_name or "Cliente")[:50],
             },
             "statement_descriptor": "BANIDA STORE"
         }
