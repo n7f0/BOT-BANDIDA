@@ -516,12 +516,13 @@ class LojaButtons(discord.ui.View):
         await interaction.response.send_message(embed=embed, view=AdminView(), ephemeral=True)
 
 class AdminView(discord.ui.View):
-    def __init__(self): super().__init__(timeout=120)
-    @discord.ui.button(label="➕ Adicionar", style=discord.ButtonStyle.success)
+    def __init__(self): super().__init__(timeout=None)  # Sem timeout — botões sempre ativos
+
+    @discord.ui.button(label="➕ Adicionar", style=discord.ButtonStyle.success, row=0)
     async def add(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(ProdutoModal())
 
-    @discord.ui.button(label="✏️ Editar", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="✏️ Editar", style=discord.ButtonStyle.primary, row=0)
     async def editar(self, interaction: discord.Interaction, button: discord.ui.Button):
         produtos = await get_produtos()
         if not produtos:
@@ -530,7 +531,7 @@ class AdminView(discord.ui.View):
         view.add_item(EditarSelect(produtos))
         await interaction.response.send_message("✏️ Selecione o produto:", view=view, ephemeral=True)
 
-    @discord.ui.button(label="🗑️ Remover", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="🗑️ Remover", style=discord.ButtonStyle.danger, row=0)
     async def remover(self, interaction: discord.Interaction, button: discord.ui.Button):
         produtos = await get_produtos()
         if not produtos:
@@ -539,13 +540,13 @@ class AdminView(discord.ui.View):
         view.add_item(RemoverSelect(produtos))
         await interaction.response.send_message("🗑️ Selecione o produto:", view=view, ephemeral=True)
 
-    @discord.ui.button(label="📂 Ver Arquivos", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="📂 Ver Arquivos", style=discord.ButtonStyle.secondary, row=1)
     async def ver_arquivos(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         async with db.acquire() as conn:
             rows = await conn.fetch("SELECT id, nome, arquivo_nome, LENGTH(arquivo_data) as tamanho_bytes FROM produtos WHERE arquivo_data IS NOT NULL")
         if not rows:
-            embed = criar_embed(titulo="📂 Arquivos", descricao="*Nenhum.*", cor=COR_DESTAQUE)
+            embed = criar_embed(titulo="📂 Arquivos", descricao="*Nenhum arquivo vinculado.*", cor=COR_DESTAQUE)
             return await interaction.followup.send(embed=embed, ephemeral=True)
         embed = criar_embed(titulo="📂 Arquivos no Banco", descricao=f"{len(rows)} arquivo(s):", cor=COR_DESTAQUE)
         total = 0
@@ -556,13 +557,13 @@ class AdminView(discord.ui.View):
         embed.add_field(name="📊 Total", value=f"**{len(rows)}** arquivos • **{total/1024/1024:.2f} MB**", inline=False)
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @discord.ui.button(label="🧹 Limpar Banco", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="🧹 Limpar Banco", style=discord.ButtonStyle.danger, row=1)
     async def limpar_banco(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed = criar_embed(titulo="⚠️ CONFIRMAÇÃO", descricao="**IRREVERSÍVEL!** Apagará tudo.", cor=COR_ERRO)
         view = ConfirmacaoLimpezaView(interaction)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-    @discord.ui.button(label="🧪 Teste de Entrega", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="🧪 Teste de Entrega", style=discord.ButtonStyle.secondary, row=1)
     async def teste(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         guild = interaction.guild or await get_guild()
@@ -575,7 +576,7 @@ class AdminView(discord.ui.View):
         await entregar_produto(interaction.user, produto_teste, pedido_id, guild, dados_arquivo_override=conteudo, nome_arquivo_override="banida_teste.txt")
         await interaction.edit_original_response(content="✅ Canal de teste criado! Expira em 5 minutos.")
 
-    @discord.ui.button(label="📊 Estatísticas", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="📊 Estatísticas", style=discord.ButtonStyle.secondary, row=2)
     async def stats(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         total, qtd = await get_vendas()
@@ -584,6 +585,125 @@ class AdminView(discord.ui.View):
         embed.add_field(name="💰 Faturamento", value=f"**{formatar_preco(total)}**", inline=True)
         embed.add_field(name="📈 Ticket Médio", value=formatar_preco(total/qtd) if qtd else "R$ 0,00", inline=True)
         await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @discord.ui.button(label="📖 Tutorial", style=discord.ButtonStyle.primary, emoji="📖", row=2)
+    async def tutorial(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = criar_embed(
+            titulo="📖 TUTORIAL — PAINEL ADMINISTRATIVO",
+            descricao=(
+                "Bem-vinda ao painel da **BANIDA STORE**! Veja abaixo como usar cada função.\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            ),
+            cor=COR_DESTAQUE
+        )
+
+        embed.add_field(
+            name="➕ ADICIONAR PRODUTO",
+            value=(
+                "Clique em **➕ Adicionar** e preencha o formulário:\n"
+                "• **Nome** — ex: `VIP Rosa`\n"
+                "• **Preço** — ex: `49.90`\n"
+                "• **Emoji** — padrão 🛒 ou use um emoji customizado\n"
+                "• **Descrição** — breve texto exibido na loja\n"
+                "Após salvar, anote o **ID gerado** (ex: `ab12cd`) para vincular arquivo."
+            ),
+            inline=False
+        )
+
+        embed.add_field(
+            name="📎 VINCULAR ARQUIVO AO PRODUTO",
+            value=(
+                "Depois de adicionar o produto, envie o comando no chat:\n"
+                "```!upload <id_do_produto>```"
+                "Anexe o arquivo junto com o comando (arraste ou 📎).\n"
+                "O arquivo é entregue **criptografado com senha única** ao comprador.\n"
+                "⚠️ Tamanho máximo: **25 MB**."
+            ),
+            inline=False
+        )
+
+        embed.add_field(
+            name="✏️ EDITAR PRODUTO",
+            value=(
+                "Clique em **✏️ Editar**, selecione o produto no menu e altere os campos desejados.\n"
+                "A loja é atualizada automaticamente após salvar."
+            ),
+            inline=False
+        )
+
+        embed.add_field(
+            name="🗑️ REMOVER PRODUTO",
+            value=(
+                "Clique em **🗑️ Remover** e selecione o produto.\n"
+                "⚠️ O arquivo vinculado também será removido do banco."
+            ),
+            inline=False
+        )
+
+        embed.add_field(
+            name="📂 VER ARQUIVOS",
+            value=(
+                "Lista todos os produtos que possuem arquivo vinculado,\n"
+                "mostrando nome do arquivo e tamanho em MB."
+            ),
+            inline=False
+        )
+
+        embed.add_field(
+            name="🧪 TESTE DE ENTREGA",
+            value=(
+                "Simula uma compra aprovada enviando um arquivo de teste para você.\n"
+                "Use para verificar se o bot está entregando corretamente.\n"
+                "O canal de entrega **expira em 5 minutos**."
+            ),
+            inline=False
+        )
+
+        embed.add_field(
+            name="📊 ESTATÍSTICAS",
+            value=(
+                "Exibe o total de vendas, faturamento e ticket médio.\n"
+                "Também disponível com o comando `!vendas`."
+            ),
+            inline=False
+        )
+
+        embed.add_field(
+            name="🧹 LIMPAR BANCO",
+            value=(
+                "⛔ **CUIDADO — IRREVERSÍVEL!**\n"
+                "Remove **todos** os produtos, pedidos e histórico de vendas.\n"
+                "Use apenas se quiser resetar tudo do zero."
+            ),
+            inline=False
+        )
+
+        embed.add_field(
+            name="🔧 COMANDOS EXTRAS (via chat)",
+            value=(
+                "`!upload <id>` — vincula arquivo ao produto\n"
+                "`!remover_arquivo <id>` — remove arquivo de um produto\n"
+                "`!vendas` — mostra estatísticas\n"
+                "`!check7z` — verifica se o 7-Zip está instalado\n"
+                "`!instalar7z` — instala o 7-Zip (necessário para entregar arquivos)\n"
+                "`!loja` — reenvia a vitrine no canal\n"
+                "`!painel_admin` — reenvia este painel admin"
+            ),
+            inline=False
+        )
+
+        embed.add_field(
+            name="💡 FLUXO RECOMENDADO",
+            value=(
+                "1️⃣ **Adicionar produto** → anote o ID\n"
+                "2️⃣ **Upload do arquivo** com `!upload <id>`\n"
+                "3️⃣ **Teste de entrega** para confirmar\n"
+                "4️⃣ Divulgue a loja — o bot cuida do resto! 🌸"
+            ),
+            inline=False
+        )
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # ================= CRIPTOGRAFIA E ENTREGA =================
 def _criar_7z_sync(dados: bytes, nome_original: str, senha: str) -> bytes:
