@@ -1,4 +1,4 @@
-# bot.py - BANIDA STORE com Sistema de Tickets (Categoria Fixa)
+# bot.py - BANIDA STORE com Sistema de Tickets (totalmente funcional)
 import discord
 from discord.ext import commands
 from discord import Embed, Color, PartialEmoji
@@ -19,7 +19,7 @@ import re
 from datetime import datetime, timedelta
 from aiohttp import web
 
-# ================= CONFIGURAÇÃO (TUDO VIA ENV) =================
+# ================= CONFIGURAÇÃO (VIA ENV) =================
 DISCORD_TOKEN   = os.getenv("LOJA_DISCORD_TOKEN")
 MP_TOKEN        = os.getenv("MERCADO_PAGO_TOKEN")
 DATABASE_URL    = os.getenv("DATABASE_URL")
@@ -50,7 +50,7 @@ if missing:
     print("❌ Variáveis obrigatórias não configuradas:", ", ".join(missing))
     exit(1)
 
-# Converte para int onde necessário
+# Converte para int
 GUILD_ID        = int(GUILD_ID)
 CARGO_DONO      = int(CARGO_DONO)
 CANAL_LOJA      = int(CANAL_LOJA)
@@ -256,7 +256,7 @@ async def log_admin(acao, admin, detalhes, cor=COR_DESTAQUE):
     embed.add_field(name="👑 Admin", value=f"<@{admin.id}> ({admin.name})", inline=True)
     await canal.send(embed=embed)
 
-# ================= SISTEMA DE TICKETS (COM CATEGORIA FIXA) =================
+# ================= SISTEMA DE TICKETS (CORRIGIDO) =================
 class FecharTicketView(discord.ui.View):
     def __init__(self, user_id, channel_id):
         super().__init__(timeout=None)
@@ -303,11 +303,15 @@ class AbrirTicketButton(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="🎫 Abrir Ticket", style=discord.ButtonStyle.primary, emoji="🎫", custom_id="abrir_ticket")
+    @discord.ui.button(label="🎫 Abrir Ticket", style=discord.ButtonStyle.primary, emoji="🎫", custom_id="abrir_ticket_btn")
     async def abrir_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Defer imediato para evitar timeout
+        await interaction.response.defer(ephemeral=True)
+        
         user = interaction.user
         guild = interaction.guild
 
+        # Verifica se já tem ticket aberto
         if user.id in tickets_ativos:
             canal_existente = bot.get_channel(tickets_ativos[user.id])
             if canal_existente:
@@ -316,21 +320,20 @@ class AbrirTicketButton(discord.ui.View):
                     description=f"Acesse-o em: {canal_existente.mention}",
                     color=COR_ERRO
                 )
-                return await interaction.response.send_message(embed=embed, ephemeral=True)
+                return await interaction.followup.send(embed=embed, ephemeral=True)
             else:
                 del tickets_ativos[user.id]
 
-        await interaction.response.defer(ephemeral=True)
-
-        # Busca a categoria
+        # Busca categoria
         categoria = guild.get_channel(CATEGORIA_TICKETS)
         if not categoria:
-            return await interaction.followup.send(f"❌ Categoria `{CATEGORIA_TICKETS}` não encontrada. Verifique o ID.", ephemeral=True)
+            await interaction.followup.send(f"❌ Categoria `{CATEGORIA_TICKETS}` não encontrada. Avise o administrador.", ephemeral=True)
+            return
 
         # Permissões
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(read_messages=False),
-            guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True, manage_channels=True),
+            guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True, manage_channels=True, attach_files=True),
             user: discord.PermissionOverwrite(read_messages=True, send_messages=True, attach_files=True)
         }
         cargo_admin = guild.get_role(CARGO_DONO)
@@ -346,9 +349,11 @@ class AbrirTicketButton(discord.ui.View):
                 reason=f"Ticket aberto por {user.name}"
             )
         except discord.Forbidden:
-            return await interaction.followup.send("❌ Sem permissão para criar canais. Verifique se o bot tem **Gerenciar Canais** e acesso à categoria.", ephemeral=True)
+            await interaction.followup.send("❌ Sem permissão para criar canais. O bot precisa de permissão **Gerenciar Canais** e acesso à categoria.", ephemeral=True)
+            return
         except Exception as e:
-            return await interaction.followup.send(f"❌ Erro ao criar canal: {e}", ephemeral=True)
+            await interaction.followup.send(f"❌ Erro ao criar canal: {e}", ephemeral=True)
+            return
 
         tickets_ativos[user.id] = canal.id
 
@@ -827,7 +832,7 @@ async def start_server():
     await site.start()
     print(f"✅ Servidor HTTP ativo na porta {port}")
 
-# ================= COMANDOS EXTRA =================
+# ================= COMANDOS =================
 @bot.command(name="loja")
 async def cmd_loja(ctx):
     await ctx.send(embed=await montar_embed_loja(), view=LojaButtons())
@@ -923,7 +928,7 @@ async def criar_painel_ticket(ctx):
     await canal.send(embed=embed, view=view)
     await ctx.send(f"✅ Painel de tickets enviado em {canal.mention}!", delete_after=5)
 
-# ================= EVENTOS PRINCIPAIS =================
+# ================= EVENTOS =================
 @bot.event
 async def on_ready():
     print(f"✅ Bot online: {bot.user}")
@@ -947,25 +952,24 @@ async def on_ready():
     await atualizar_loja()
     await atualizar_vendas()
 
-    # Envia painel de tickets automaticamente se não existir
+    # Envia o painel de tickets automaticamente (limpa mensagens antigas)
     canal_ticket = bot.get_channel(CANAL_TICKET_PANEL)
     if canal_ticket:
-        existe = False
-        async for msg in canal_ticket.history(limit=10):
-            if msg.author == bot.user and msg.embeds and "Central de Suporte" in msg.embeds[0].title:
-                existe = True
-                break
-        if not existe:
-            embed = discord.Embed(
-                title="🎫 Central de Suporte - BANIDA STORE",
-                description="Precisa de ajuda com sua compra? Abra um ticket e nossa equipe irá atender você.\n\n➡️ **Clique no botão abaixo para abrir um ticket.**",
-                color=COR_PRINCIPAL
-            )
-            embed.set_footer(text="🌸 BANIDA STORE • Atendimento rápido")
-            embed.timestamp = datetime.utcnow()
-            view = AbrirTicketButton()
-            await canal_ticket.send(embed=embed, view=view)
-            print("✅ Painel de tickets enviado automaticamente.")
+        # Limpa mensagens do bot no canal para evitar duplicação
+        async for msg in canal_ticket.history(limit=20):
+            if msg.author == bot.user:
+                try: await msg.delete()
+                except: pass
+        embed = discord.Embed(
+            title="🎫 Central de Suporte - BANIDA STORE",
+            description="Precisa de ajuda com sua compra? Abra um ticket e nossa equipe irá atender você.\n\n➡️ **Clique no botão abaixo para abrir um ticket.**",
+            color=COR_PRINCIPAL
+        )
+        embed.set_footer(text="🌸 BANIDA STORE • Atendimento rápido")
+        embed.timestamp = datetime.utcnow()
+        view = AbrirTicketButton()
+        await canal_ticket.send(embed=embed, view=view)
+        print("✅ Painel de tickets enviado automaticamente.")
     else:
         print(f"⚠️ Canal de ticket {CANAL_TICKET_PANEL} não encontrado. Use !criar_painel_ticket.")
 
@@ -988,6 +992,7 @@ async def on_interaction(interaction: discord.Interaction):
             await interaction.followup.send("❌ Erro ao verificar.", ephemeral=True)
     elif custom_id.startswith("cancel_"):
         await interaction.response.send_message("❌ Pedido cancelado.", ephemeral=True)
+    # O botão de ticket tem sua própria view e callback; não precisa de tratamento adicional aqui
 
 # ================= INÍCIO =================
 if __name__ == "__main__":
