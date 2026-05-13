@@ -1,4 +1,4 @@
-# bot.py - NEXZY STORE - Versão limpa e reutilizável
+# bot.py - BANDIDA STORE - Tema Rosa
 import discord
 from discord.ext import commands
 from discord import Embed, Color, PartialEmoji
@@ -61,12 +61,12 @@ if CANAL_LOG_ADMIN:
 if "railwaypostgresql://" in DATABASE_URL:
     DATABASE_URL = DATABASE_URL.replace("railwaypostgresql://", "postgresql://")
 
-# Cores tema escuro
-COR_PRINCIPAL   = 0x1a1a1a
-COR_SUCESSO     = 0x2d2d2d
-COR_ERRO        = 0x8b0000
-COR_PENDENTE    = 0x3d3d3d
-COR_DESTAQUE    = 0x4a4a4a
+# Cores tema rosa
+COR_PRINCIPAL   = 0xFF69B4   # Hot Pink
+COR_SUCESSO     = 0xFF1493   # Deep Pink
+COR_ERRO        = 0x8B0000   # Dark Red
+COR_PENDENTE    = 0xFFB6C1   # Light Pink
+COR_DESTAQUE    = 0xFF69B4
 
 sdk     = mercadopago.SDK(MP_TOKEN)
 intents = discord.Intents.all()
@@ -101,7 +101,7 @@ def instalar_7zip():
 
 def criar_embed(titulo="", descricao="", cor=COR_PRINCIPAL):
     embed = Embed(title=titulo, description=descricao, color=cor)
-    embed.set_footer(text="⚫ NEXZY STORE")
+    embed.set_footer(text="🌸 BANDIDA STORE")
     embed.timestamp = datetime.utcnow()
     return embed
 
@@ -234,9 +234,9 @@ async def log_venda(pedido_id, user, produto, valor, senha_arquivo=None):
         return
     canal = bot.get_channel(CANAL_LOG_VENDAS)
     if not canal: return
-    embed = criar_embed(titulo="🖤 VENDA FINALIZADA", descricao="Nova compra aprovada com sucesso!", cor=COR_SUCESSO)
+    embed = criar_embed(titulo="🌸 VENDA FINALIZADA", descricao="Nova compra aprovada com sucesso!", cor=COR_SUCESSO)
     embed.add_field(name="🆔 Pedido", value=f"`{pedido_id}`", inline=True)
-    embed.add_field(name="👤 Comprador", value=f"<@{user.id}> ({user.name})", inline=True)
+    embed.add_field(name="👤 Compradora", value=f"<@{user.id}> ({user.name})", inline=True)
     embed.add_field(name="📦 Produto", value=produto, inline=True)
     embed.add_field(name="💰 Valor", value=formatar_preco(valor), inline=True)
     embed.add_field(name="🔐 Senha", value=f"`{senha_arquivo}`" if senha_arquivo else "Sem arquivo", inline=False)
@@ -253,7 +253,7 @@ async def log_admin(acao, admin, detalhes, cor=COR_DESTAQUE):
 
 # ================= CRIPTOGRAFIA 7ZIP =================
 def _criar_7z_sync(dados: bytes, nome_original: str, senha: str) -> bytes:
-    tmp = tempfile.mkdtemp(prefix="nexzy_")
+    tmp = tempfile.mkdtemp(prefix="bandida_")
     try:
         caminho_original = os.path.join(tmp, nome_original)
         with open(caminho_original, "wb") as f:
@@ -283,7 +283,7 @@ async def entregar_produto(user, produto: dict, pedido_id: str, guild, dados_arq
         tem_arquivo = True
         senha_arquivo = gerar_senha_arquivo()
         dados_raw = dados_arquivo_override
-        nome_original = nome_arquivo_override or "arquivo_nexzy"
+        nome_original = nome_arquivo_override or "arquivo_bandida"
     else:
         prod_completo = await get_produto_completo(produto["id"])
         if prod_completo and prod_completo["arquivo_data"] is not None:
@@ -305,9 +305,9 @@ async def entregar_produto(user, produto: dict, pedido_id: str, guild, dados_arq
     canal_temp = await guild.create_text_channel(name=nome_canal, overwrites=overwrites, reason=f"Entrega para {user.name}")
 
     embed = discord.Embed(
-        title="🖤  NEXZY STORE — COMPRA APROVADA",
+        title="🌸  BANDIDA STORE — COMPRA APROVADA",
         description=f"> Olá, **{user.display_name}**! Seu pagamento foi **confirmado**.\n> ⚠️ **Este canal será excluído em 5 minutos!**\n> 🔐 **A key é de uso único** — após extrair, o canal será destruído.",
-        color=0x2b2b2b
+        color=0xFF69B4
     )
     embed.set_thumbnail(url=user.display_avatar.url if user.display_avatar else None)
     embed.add_field(name="**━━━━━━━━━━━━━━━━━━━━**", value="\u200b", inline=False)
@@ -319,14 +319,14 @@ async def entregar_produto(user, produto: dict, pedido_id: str, guild, dados_arq
     if tem_arquivo:
         embed.add_field(name="**🔐  Senha do Arquivo `.7z`**", value=f"```\n{senha_arquivo}\n```", inline=False)
         embed.add_field(name="**📂  Como extrair**", value="**1.** Baixe o arquivo `.7z` abaixo **AGORA**\n**2.** Instale o **[7-Zip](https://7-zip.org)**\n**3.** Extraia com a senha acima\n\n⚠️ **KEY DE USO ÚNICO** — Canal será deletado em 5 minutos", inline=False)
-        embed.set_footer(text="⚫ NEXZY STORE  •  5 minutos para baixar!")
+        embed.set_footer(text="🌸 BANDIDA STORE  •  5 minutos para baixar!")
         embed.timestamp = datetime.utcnow()
 
         if not verificar_7zip():
             await canal_temp.send("⚠️ 7-Zip não está instalado no servidor. Peça ao administrador para executar `!instalar7z`.")
         else:
             dados_cifrados = await criar_7z_criptografado(dados_raw, nome_original, senha_arquivo)
-            nome_saida = f"nexzy_{produto['id']}_{pedido_id[:8]}.7z"
+            nome_saida = f"bandida_{produto['id']}_{pedido_id[:8]}.7z"
             arquivo_discord = discord.File(fp=io.BytesIO(dados_cifrados), filename=nome_saida)
             await canal_temp.send(embed=embed, file=arquivo_discord)
     else:
@@ -349,7 +349,7 @@ async def entregar_produto(user, produto: dict, pedido_id: str, guild, dados_arq
 
 # ================= MODAIS E SELECTS =================
 class ProdutoModal(discord.ui.Modal, title="✨ Adicionar Produto"):
-    nome_input      = discord.ui.TextInput(label="📦 Nome", placeholder="Ex: VIP Premium", required=True)
+    nome_input      = discord.ui.TextInput(label="📦 Nome", placeholder="Ex: VIP Rosa", required=True)
     preco_input     = discord.ui.TextInput(label="💰 Preço", placeholder="49.90", required=True)
     emoji_input     = discord.ui.TextInput(label="😀 Emoji", placeholder="👑 ou <a:exemplo:ID>", required=False, default="🛒")
     descricao_input = discord.ui.TextInput(label="📝 Descrição", placeholder="Breve descrição", required=False)
@@ -495,7 +495,7 @@ class LojaButtons(discord.ui.View):
         embed.add_field(name="🗑️ Remover", value="Remove produto", inline=True)
         embed.add_field(name="📂 Ver Arquivos", value="Arquivos do banco", inline=True)
         embed.add_field(name="🧹 Limpar Banco", value="Limpa tudo", inline=True)
-        embed.add_field(name="🧪 Teste de Entrega", value="Envia `teste_nexzy.txt`", inline=True)
+        embed.add_field(name="🧪 Teste de Entrega", value="Envia `bandida_teste.txt`", inline=True)
         embed.add_field(name="📊 Estatísticas", value="Faturamento", inline=True)
         embed.add_field(name="📂 Upload", value="`!upload <id>`", inline=True)
         embed.add_field(name="🔧 Instalar 7-Zip", value="`!instalar7z`", inline=True)
@@ -554,18 +554,18 @@ class AdminView(discord.ui.View):
         guild = interaction.guild or await get_guild()
         if not guild:
             return await interaction.followup.send("❌ Servidor não encontrado.", ephemeral=True)
-        conteudo = b"Arquivo de teste da Nexzy Store.\nSe voce esta vendo isso, a entrega funcionou!\nKey de uso unico - Canal expira em 5 minutos."
+        conteudo = b"Arquivo de teste da Bandida Store.\nSe voce esta vendo isso, a entrega funcionou!\nKey de uso unico - Canal expira em 5 minutos."
         produto_teste = {"id":"teste","nome":"Produto de Teste","preco":0.0,"emoji":"🧪"}
         pedido_id = f"TESTE-{uuid.uuid4().hex[:8]}"
         await interaction.followup.send("⏳ Criando canal de teste (5 min)...", ephemeral=True)
-        await entregar_produto(interaction.user, produto_teste, pedido_id, guild, dados_arquivo_override=conteudo, nome_arquivo_override="teste_nexzy.txt")
+        await entregar_produto(interaction.user, produto_teste, pedido_id, guild, dados_arquivo_override=conteudo, nome_arquivo_override="bandida_teste.txt")
         await interaction.edit_original_response(content="✅ Canal de teste criado! Expira em 5 minutos.")
 
     @discord.ui.button(label="📊 Estatísticas", style=discord.ButtonStyle.secondary)
     async def stats(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         total, qtd = await get_vendas()
-        embed = criar_embed(titulo="📊 ESTATÍSTICAS — NEXZY STORE", cor=COR_DESTAQUE)
+        embed = criar_embed(titulo="📊 ESTATÍSTICAS — BANDIDA STORE", cor=COR_DESTAQUE)
         embed.add_field(name="📦 Vendas", value=f"**{qtd}** pedidos", inline=True)
         embed.add_field(name="💰 Faturamento", value=f"**{formatar_preco(total)}**", inline=True)
         embed.add_field(name="📈 Ticket Médio", value=formatar_preco(total/qtd) if qtd else "R$ 0,00", inline=True)
@@ -580,14 +580,14 @@ async def iniciar_pagamento(interaction: discord.Interaction, produto_id: str):
     try:
         payment_data = {
             "transaction_amount": float(produto["preco"]),
-            "description": f"{produto['nome']} - Nexzy Store",
+            "description": f"{produto['nome']} - Bandida Store",
             "payment_method_id": "pix",
             "payer": {
-                "email": f"nexzy_{interaction.user.id}@nexzystore.com.br",
+                "email": f"bandida_{interaction.user.id}@bandidastore.com.br",
                 "first_name": (interaction.user.name or "Cliente")[:50],
                 "identification": {"type": "CPF", "number": "00000000000"}
             },
-            "statement_descriptor": "NEXZY STORE"
+            "statement_descriptor": "BANDIDA STORE"
         }
         payment = sdk.payment().create(payment_data)
         resp = payment["response"]
@@ -599,7 +599,7 @@ async def iniciar_pagamento(interaction: discord.Interaction, produto_id: str):
         embed = criar_embed(titulo="💳 PAGAMENTO VIA PIX",
                             descricao=f"**{produto['emoji']} {produto['nome']}**\n💰 **{formatar_preco(produto['preco'])}**",
                             cor=COR_PENDENTE)
-        embed.add_field(name="🏢 Destinatário", value="**NEXZY STORE**", inline=True)
+        embed.add_field(name="🏢 Destinatário", value="**BANDIDA STORE**", inline=True)
         embed.add_field(name="⏰ Validade", value="**30 minutos**", inline=True)
         embed.add_field(name="📋 Código PIX", value=f"```\n{pix[:300]}\n```", inline=False)
         embed.add_field(name="📱 Como Pagar", value="1. Copie o código\n2. PIX no seu banco\n3. Clique em ✅ JÁ PAGUEI", inline=False)
@@ -630,16 +630,16 @@ async def verificar_pagamento(payment_id, pedido_id, user, produto, guild):
 # ================= ATUALIZAÇÃO DA VITRINE =================
 async def montar_embed_loja():
     produtos = await get_produtos()
-    embed = criar_embed(titulo="**🖤  N E X Z Y  S T O R E**",
+    embed = criar_embed(titulo="**🌸  B A N D I D A  S T O R E**",
                         descricao="╔══════════════════════════╗\n💎 **Compre via PIX e receba em canal exclusivo!**\n🔐 Arquivo criptografado + senha única\n⏰ Canal expira em **5 minutos**\n╚══════════════════════════╝",
-                        cor=0x1a1a1a)
+                        cor=0xFF69B4)
     for pid, p in produtos.items():
         desc = p.get("descricao") or ""
         arquivo = "📂 Arquivo incluído" if p.get("arquivo_nome") else "🔑 Acesso imediato"
         embed.add_field(name=f"{p['emoji']}  {p['nome']}",
                         value=f"**{formatar_preco(p['preco'])}**\n🆔 `{pid}`\n{arquivo}" + (f"\n> {desc}" if desc else ""),
                         inline=True)
-    embed.set_footer(text="⚫ NEXZY STORE • Clique em 💰 COMPRAR")
+    embed.set_footer(text="🌸 BANDIDA STORE • Clique em 💰 COMPRAR")
     embed.timestamp = datetime.utcnow()
     return embed
 
@@ -664,7 +664,7 @@ async def atualizar_vendas():
             try: await msg.delete()
             except: pass
     total, qtd = await get_vendas()
-    embed = criar_embed(titulo="📊 ESTATÍSTICAS — NEXZY STORE", cor=COR_DESTAQUE)
+    embed = criar_embed(titulo="📊 ESTATÍSTICAS — BANDIDA STORE", cor=COR_DESTAQUE)
     embed.add_field(name="📦 Vendas", value=f"**{qtd}** pedidos", inline=True)
     embed.add_field(name="💰 Faturamento", value=f"**{formatar_preco(total)}**", inline=True)
     embed.add_field(name="📈 Ticket Médio", value=formatar_preco(total/qtd) if qtd else "R$ 0,00", inline=True)
@@ -699,7 +699,7 @@ async def webhook_mp(request):
 async def start_server():
     app = web.Application()
     app.router.add_post("/webhook", webhook_mp)
-    app.router.add_get("/health", lambda r: web.Response(text="OK — NEXZY STORE"))
+    app.router.add_get("/health", lambda r: web.Response(text="OK — BANDIDA STORE"))
     runner = web.AppRunner(app)
     await runner.setup()
     port = int(os.getenv("PORT", "8080"))
@@ -719,7 +719,7 @@ async def cmd_vendas(ctx):
     if not any(r.id == CARGO_DONO for r in ctx.author.roles):
         return
     total, qtd = await get_vendas()
-    embed = criar_embed(titulo="📊 ESTATÍSTICAS — NEXZY STORE", cor=COR_DESTAQUE)
+    embed = criar_embed(titulo="📊 ESTATÍSTICAS — BANDIDA STORE", cor=COR_DESTAQUE)
     embed.add_field(name="📦 Vendas", value=f"**{qtd}** pedidos", inline=True)
     embed.add_field(name="💰 Faturamento", value=f"**{formatar_preco(total)}**", inline=True)
     embed.add_field(name="📈 Ticket Médio", value=formatar_preco(total/qtd) if qtd else "R$ 0,00", inline=True)
